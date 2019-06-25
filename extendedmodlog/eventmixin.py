@@ -481,7 +481,7 @@ class EventMixin:
             embed.add_field(name=_("Type"), value=_("Text"))
         if type(new_channel) == discord.CategoryChannel:
             msg += _("Category Channel Created")
-            embed.add_field(name=_("Type"), value=_("Text"))
+            embed.add_field(name=_("Type"), value=_("Category"))
         if type(new_channel) == discord.VoiceChannel:
             msg += _("Voice Channel Created")
             embed.add_field(name=_("Type"), value=_("Voice"))
@@ -529,7 +529,7 @@ class EventMixin:
             embed.add_field(name=_("Type"), value=_("Text"))
         if type(old_channel) == discord.CategoryChannel:
             msg += _("Category Channel Deleted")
-            embed.add_field(name=_("Type"), value=_("Text"))
+            embed.add_field(name=_("Type"), value=_("Category"))
         if type(old_channel) == discord.VoiceChannel:
             msg += _("Voice Channel Deleted")
             embed.add_field(name=_("Type"), value=_("Voice"))
@@ -937,7 +937,7 @@ class EventMixin:
 
     @listener()
     async def on_guild_emojis_update(self, guild, before, after):
-        if not await self.config.guild(guild).guild_change.enabled():
+        if not await self.config.guild(guild).emoji_change.enabled():
             return
         try:
             channel = await self.modlog_channel(guild, "emoji_change")
