@@ -108,7 +108,6 @@ class EventMixin:
         except RuntimeError:
             return
         time = ctx.message.created_at
-        cleanmsg = ctx.message.content
         message = ctx.message
         can_run = await self.member_can_run(ctx)
         command = ctx.message.content.replace(ctx.prefix, "")
@@ -140,8 +139,6 @@ class EventMixin:
         else:
             role = f"everyone\n{privs}"
 
-        for i in ctx.message.mentions:
-            cleanmsg = cleanmsg.replace(i.mention, str(i))
         infomessage = (
             f"{message.author.name}#{message.author.discriminator}"
             + _(" used ")
@@ -154,7 +151,7 @@ class EventMixin:
 
             embed = discord.Embed(
                 title=infomessage,
-                description=cleanmsg,
+                description=message.content,
                 colour=await self.get_colour(guild),
                 timestamp=time,
             )
@@ -166,19 +163,52 @@ class EventMixin:
             embed.set_author(name=author_title, icon_url=message.author.avatar_url)
             await channel.send(embed=embed)
         else:
-            clean_msg = f"{infomessage}\n`{cleanmsg}`"
-            await channel.send(clean_msg)
+            clean_msg = f"{infomessage}\n`{message.clean_content}`"
+            await channel.send(clean_msg[:2000])
 
-    @listener()
+    @listener(name="on_raw_message_delete")
+    async def on_raw_message_delete_listener(self, payload):
+        # custom name of method used, because this is only supported in Red 3.1+
+        guild_id = payload.guild_id
+        if guild_id is None:
+            return
+        guild = self.bot.get_guild(guild_id)
+        settings = await self.config.guild(guild).message_delete()
+        if not settings["enabled"]:
+            return
+        channel_id = payload.channel_id
+        if channel_id in await self.config.guild(guild).ignored_channels():
+            return
+        try:
+            channel = await self.modlog_channel(guild, "message_delete")
+        except RuntimeError:
+            return
+        message = payload.cached_message
+        if message is None:
+            if settings["cached_only"]:
+                return
+            message_channel = guild.get_channel(channel_id)
+            if channel.permissions_for(guild.me).embed_links:
+                embed = discord.Embed(
+                    description=_("*Message's content unknown.*"), colour=discord.Colour.dark_red()
+                )
+                embed.add_field(name=_("Channel"), value=message_channel.mention)
+                embed.set_author(name=_("Deleted Message"))
+                await channel.send(embed=embed)
+            else:
+                infomessage = _("Message was deleted in ") + message_channel.mention
+                await channel.send(f"{infomessage}\n*Message's content unknown.*")
+            return
+        await self._cached_message_delete(message, guild, settings, channel)
+
     async def on_message_delete(self, message):
+        # listener decorator isn't used here because cached messages
+        # are handled by on_raw_message_delete event in Red 3.1+
         guild = message.guild
         if guild is None:
             return
         settings = await self.config.guild(guild).message_delete()
         if not settings["enabled"]:
-            return
-        if message.author.bot and not settings["bots"]:
-            # return to ignore bot accounts if enabled
             return
         if message.channel.id in await self.config.guild(guild).ignored_channels():
             return
@@ -186,12 +216,15 @@ class EventMixin:
             channel = await self.modlog_channel(guild, "message_delete")
         except RuntimeError:
             return
+        await self._cached_message_delete(message, guild, settings, channel)
+
+    async def _cached_message_delete(self, message, guild, settings, channel):
+        if message.author.bot and not settings["bots"]:
+            # return to ignore bot accounts if enabled
+            return
         if message.content == "" and message.attachments == []:
             return
         time = message.created_at
-        cleanmsg = message.content
-        for i in message.mentions:
-            cleanmsg = cleanmsg.replace(i.mention, str(i))
         perp = None
         if channel.permissions_for(guild.me).view_audit_log:
             action = discord.AuditLogAction.message_delete
@@ -226,7 +259,8 @@ class EventMixin:
             )
             await channel.send(embed=embed)
         else:
-            await channel.send(infomessage)
+            clean_msg = f"{infomessage}\n`{message.clean_content}`"
+            await channel.send(clean_msg[:2000])
 
     async def invite_links_loop(self):
         """Check every 5 minutes for updates to the invite links"""
@@ -836,12 +870,6 @@ class EventMixin:
             return
         if before.content == after.content:
             return
-        cleanbefore = before.content
-        for i in before.mentions:
-            cleanbefore = cleanbefore.replace(i.mention, str(i))
-        cleanafter = after.content
-        for i in after.mentions:
-            cleanafter = cleanafter.replace(i.mention, str(i))
         try:
             channel = await self.modlog_channel(guild, "message_edit")
         except RuntimeError:
@@ -871,9 +899,9 @@ class EventMixin:
                 + f"**{before.channel.mention}"
                 + f" **{before.author.name}#{before.author.discriminator}'s** "
                 + _("message has been edited.\nBefore: ")
-                + cleanbefore
+                + before.clean_content
                 + _("\nAfter: ")
-                + cleanafter
+                + after.clean_content
             )
             await channel.send(msg[:2000])
 
