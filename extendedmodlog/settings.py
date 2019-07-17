@@ -14,6 +14,7 @@ inv_settings = {
         "bulk_enabled": False,
         "bulk_individual": False,
         "cached_only": True,
+        "send_cached_images": False,
         "colour": None,
         "emoji": "\N{WASTEBASKET}\N{VARIATION SELECTOR-16}",
         "embed": True,

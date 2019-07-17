@@ -546,6 +546,28 @@ class ExtendedModLog(EventMixin, commands.Cog):
             verb = _("enabled")
         await ctx.send(msg + verb)
 
+    @_delete.command(name="sendcachedimages")
+    async def _delete_sendcachedimages(self, ctx):
+        """
+            Toggle sending cached images in message delete notifications.
+
+            If attachments size exceeds 8MB bot will try to
+            send attachments that fit this limit.
+            NOTE: There is no guarantee that image was cached by discord,
+            so don't rely on this.
+        """
+        guild = ctx.message.guild
+        msg = _("Sending cached images ")
+        if not await self.config.guild(guild).message_delete.send_cached_images():
+            await self.config.guild(guild).message_delete.send_cached_images.set(True)
+            self.settings[ctx.guild.id]["message_delete"]["send_cached_images"] = True
+            verb = _("enabled")
+        else:
+            await self.config.guild(guild).message_delete.send_cached_images.set(False)
+            self.settings[ctx.guild.id]["message_delete"]["send_cached_images"] = False
+            verb = _("disabled")
+        await ctx.send(msg + verb)
+
     @_modlog.command(name="botchange")
     async def _user_bot_logging(self, ctx: commands.Context) -> None:
         """
