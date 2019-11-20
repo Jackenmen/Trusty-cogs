@@ -259,10 +259,10 @@ class NotSoBot(commands.Cog):
             "lang": "python",
             "expire": "0",
         }
-        with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession() as session:
             async with session.post("https://spit.mixtape.moe/api/create", data=payload) as r:
                 url = await r.text()
-                await ctx.send("Uploaded to paste, URL: <{0}>".format(url))
+                await ctx.send("Uploaded to paste, URL: <https://spit.mixtape.moe{0}>".format(url))
 
     def do_magik(self, scale, img):
         try:
