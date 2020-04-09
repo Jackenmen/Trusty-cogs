@@ -22,7 +22,7 @@ EVENT_EMOJIS = [
 class EventPoster(commands.Cog):
     """Create admin approved events/announcements"""
 
-    __version__ = "1.5.2"
+    __version__ = "1.5.4"
     __author__ = "TrustyJAID"
 
     def __init__(self, bot):
@@ -64,7 +64,8 @@ class EventPoster(commands.Cog):
                     continue
                 if event is None:
                     return
-                self.event_cache[str(guild_id)] = {}
+                if str(guild_id) not in self.event_cache:
+                    self.event_cache[str(guild_id)] = {}
                 self.event_cache[str(guild_id)][str(event.message.id)] = event
 
     @commands.Cog.listener()
@@ -230,10 +231,7 @@ class EventPoster(commands.Cog):
             max_slots = await self.config.guild(ctx.guild).default_max()
             # log.debug(f"using default {max_slots}")
         event = Event(
-            hoster=ctx.author,
-            members=list(member_list),
-            event=description,
-            max_slots=max_slots
+            hoster=ctx.author, members=list(member_list), event=description, max_slots=max_slots
         )
         em = await self.make_event_embed(ctx, event)
         admin_msg = await approval_channel.send(embed=em)
@@ -313,7 +311,11 @@ class EventPoster(commands.Cog):
     @commands.command(name="join")
     @commands.guild_only()
     async def join_event(
-        self, ctx: commands.Context, player_class: Optional[str] = "", *, hoster: discord.Member
+        self,
+        ctx: commands.Context,
+        hoster: discord.Member,
+        *,
+        player_class: Optional[str] = None,
     ) -> None:
         """Join an event being hosted"""
         if str(hoster.id) not in await self.config.guild(ctx.guild).events():
