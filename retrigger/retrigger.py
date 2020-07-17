@@ -41,7 +41,7 @@ class ReTrigger(TriggerHandler, commands.Cog):
     """
 
     __author__ = ["TrustyJAID"]
-    __version__ = "2.13.0"
+    __version__ = "2.13.1"
 
     def __init__(self, bot):
         self.bot = bot
@@ -1648,6 +1648,8 @@ class ReTrigger(TriggerHandler, commands.Cog):
             return await ctx.send(msg)
         guild = ctx.guild
         author = ctx.message.author.id
+        if not [i[0] for i in multi_response]:
+            return await ctx.send(_("You have no actions provided for this trigger."))
         new_trigger = Trigger(
             name,
             regex,
