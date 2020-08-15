@@ -293,7 +293,6 @@ class TriggerHandler:
             trigger = await Trigger.from_json(triggers)
             author = ctx.guild.get_member(trigger.author)
             active_triggers = [t.name for t in self.triggers[ctx.guild.id]]
-            log.info(active_triggers)
             if not author:
                 try:
                     author = await self.bot.fetch_user(trigger.author)
@@ -431,6 +430,8 @@ class TriggerHandler:
                 info += _("Message deleted after: {time} seconds.\n").format(
                     time=trigger.delete_after
                 )
+            if trigger.read_filenames:
+                info += _("Read filenames: **Enabled**\n")
 
             if embeds:
                 info += _("__Regex__: ") + box(trigger.regex.pattern, lang="bf")
@@ -637,7 +638,7 @@ class TriggerHandler:
                     log.debug(print_msg + trigger.name)
                     continue
             content = message.content
-            if "delete" in trigger.response_type and trigger.text:
+            if trigger.read_filenames:
                 content = message.content + " " + " ".join(f.filename for f in message.attachments)
 
             if trigger.ocr_search and ALLOW_OCR:
@@ -645,7 +646,7 @@ class TriggerHandler:
 
             search = await self.safe_regex_search(guild, trigger, content)
             if not search[0]:
-                self.triggers[guild.id].remove(trigger)
+                trigger.enabled = False
                 return
             elif search[0] and search[1] != []:
                 if await self.check_trigger_cooldown(message, trigger):
@@ -881,7 +882,7 @@ class TriggerHandler:
             try:
                 await trigger_author.send(response)
             except discord.errors.Forbidden:
-                await self.remove_trigger_from_cache(guild.id, trigger)
+                trigger.enabled = False
                 log.debug(error_in, exc_info=True)
             except Exception:
                 log.error(error_in, exc_info=True)
