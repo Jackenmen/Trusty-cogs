@@ -3,7 +3,7 @@ import logging
 import asyncio
 import datetime
 
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from redbot.core import commands, Config, checks
 from redbot.core.i18n import Translator, cog_i18n
@@ -52,6 +52,17 @@ class Destiny(DestinyAPI, commands.Cog):
         """
         pre_processed = super().format_help_for_context(ctx)
         return f"{pre_processed}\n\nCog Version: {self.__version__}"
+
+    async def red_delete_data_for_user(
+        self,
+        *,
+        requester: Literal["discord_deleted_user", "owner", "user", "user_strict"],
+        user_id: int,
+    ):
+        """
+            Method for finding users data inside the cog and deleting it.
+        """
+        await self.config.user_from_id(user_id).clear()
 
     @staticmethod
     def humanize_timedelta(
