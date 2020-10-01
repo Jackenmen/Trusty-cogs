@@ -12,7 +12,7 @@ from io import BytesIO
 
 from redbot import version_info, VersionInfo
 from redbot.core import Config, checks, commands, VersionInfo, version_info
-from redbot.core.utils.chat_formatting import escape, pagify
+from redbot.core.utils.chat_formatting import escape, pagify, humanize_list
 from redbot.core.i18n import Translator, cog_i18n
 
 from .tweet_entry import TweetEntry
@@ -63,7 +63,7 @@ class Tweets(commands.Cog):
     """
 
     __author__ = ["Palm__", "TrustyJAID"]
-    __version__ = "2.5.4"
+    __version__ = "2.6.2"
 
     def __init__(self, bot):
         self.bot = bot
@@ -77,6 +77,7 @@ class Tweets(commands.Cog):
             },
             "accounts": {},
             "error_channel": None,
+            "version": "0.0.0",
         }
         self.config.register_global(**default_global)
         self.config.register_channel(custom_embeds=True)
@@ -101,10 +102,13 @@ class Tweets(commands.Cog):
 
     async def initialize(self):
         data = await self.config.accounts()
-        if type(data) == list:
-            for account in data:
+        if await self.config.version() < "2.6.0":
+            for _, account in data.items():
+                if "retweets" not in account:
+                    account["retweets"] = True
                 self.accounts[account["twitter_id"]] = account
             await self.config.accounts.set(self.accounts)
+            await self.config.version.set(self.__version__)
         else:
             self.accounts = await self.config.accounts()
         embed_channels = await self.config.all_channels()
@@ -205,10 +209,10 @@ class Tweets(commands.Cog):
             url=post_url,
             timestamp=status.created_at,
         )
-        em.set_footer(text="@" + username)
+        em.set_footer(text=f"@{username}")
         if hasattr(status, "retweeted_status"):
             em.set_author(
-                name=status.user.name + " Retweeted " + status.retweeted_status.user.name,
+                name=f"{status.user.name} Retweeted {status.retweeted_status.user.name}",
                 url=post_url,
                 icon_url=status.user.profile_image_url,
             )
@@ -266,6 +270,8 @@ class Tweets(commands.Cog):
         if str(user_id) not in self.accounts:
             return
         if status.in_reply_to_screen_name and not self.accounts[str(user_id)]["replies"]:
+            return
+        if hasattr(status, "retweeted_status") and not self.accounts[str(user_id)]["retweets"]:
             return
         em = await self.build_tweet_embed(status)
         # channel_list = account.channel
@@ -648,30 +654,79 @@ class Tweets(commands.Cog):
         await ctx.send(_("Restarting the twitter stream."))
 
     @_autotweet.command(name="replies")
-    async def _replies(self, ctx: commands.context, username: str) -> None:
+    async def _replies(self, ctx: commands.context, *usernames: str) -> None:
         """
         Toggle an accounts replies being posted
 
         This is checked on `autotweet` as well as `gettweets`
         """
-        username = username.lower()
-        edited_account = None
-        for user_id, accounts in self.accounts.items():
-            if accounts["twitter_name"].lower() == username:
-                edited_account = user_id
-        if edited_account is None:
-            await ctx.send(_("I am not following ") + username)
-            return
-        else:
-            # all_accounts.remove(edited_account)
-            replies = self.accounts[str(edited_account)]["replies"]
-            self.accounts[str(edited_account)]["replies"] = not replies
-
-            await self.config.accounts.set(self.accounts)
-            if self.accounts[str(edited_account)]["replies"]:
-                await ctx.send(_("Now posting replies from ") + username)
+        added_replies = []
+        removed_treplies = []
+        for username in usernames:
+            username = username.lower()
+            edited_account = None
+            for user_id, accounts in self.accounts.items():
+                if accounts["twitter_name"].lower() == username:
+                    edited_account = user_id
+            if edited_account is None:
+                continue
             else:
-                await ctx.send(_("No longer posting replies from") + username)
+                # all_accounts.remove(edited_account)
+                replies = self.accounts[edited_account]["replies"]
+                self.accounts[edited_account]["replies"] = not replies
+                if replies:
+                    removed_treplies.append(username)
+                else:
+                    added_replies.append(username)
+        await self.config.accounts.set(self.accounts)
+        msg = ""
+        if added_replies:
+            msg += _("Now posting replies from {replies}\n").format(
+                replies=humanize_list(added_replies)
+            )
+        if removed_treplies:
+            msg += _("No longer posting replies from {replies}\n").format(
+                replies=humanize_list(removed_treplies)
+            )
+        await ctx.send(msg)
+
+    @_autotweet.command(name="retweets")
+    async def _retweets(self, ctx: commands.context, *usernames: str) -> None:
+        """
+        Toggle an accounts retweets being posted
+
+        This is checked on `autotweet` as well as `gettweets`
+        """
+        added_retweets = []
+        removed_retweets = []
+        for username in usernames:
+            username = username.lower()
+            edited_account = None
+            for user_id, accounts in self.accounts.items():
+                if accounts["twitter_name"].lower() == username:
+                    edited_account = user_id
+            if edited_account is None:
+                await ctx.send(_("I am not following ") + username)
+                return
+            else:
+                # all_accounts.remove(edited_account)
+                retweets = self.accounts[edited_account]["retweets"]
+                self.accounts[edited_account]["retweets"] = not retweets
+                if retweets:
+                    removed_retweets.append(username)
+                else:
+                    added_retweets.append(username)
+        await self.config.accounts.set(self.accounts)
+        msg = ""
+        if added_retweets:
+            msg += _("Now posting retweets from {retweets}.").format(
+                retweets=humanize_list(added_retweets)
+            )
+        if removed_retweets:
+            msg += _("No longer posting retweets from {retweets}").format(
+                retweets=humanize_list(removed_retweets)
+            )
+        await ctx.send(msg)
 
     async def is_followed_account(self, twitter_id) -> Tuple[bool, Any]:
         followed_accounts = await self.config.accounts()

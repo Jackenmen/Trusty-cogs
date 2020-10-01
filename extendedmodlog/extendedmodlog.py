@@ -22,7 +22,7 @@ class ExtendedModLog(EventMixin, commands.Cog):
     """
 
     __author__ = ["RePulsar", "TrustyJAID"]
-    __version__ = "2.8.12"
+    __version__ = "2.8.13"
 
     def __init__(self, bot):
         self.bot = bot
@@ -30,6 +30,7 @@ class ExtendedModLog(EventMixin, commands.Cog):
         self.config.register_guild(**inv_settings)
         self.config.register_global(version="0.0.0")
         self.settings = {}
+        self._ban_cache = {}
         self.loop = bot.loop.create_task(self.invite_links_loop())
 
     def format_help_for_context(self, ctx: commands.Context):
@@ -331,7 +332,7 @@ class ExtendedModLog(EventMixin, commands.Cog):
             `emoji_change`
             `commands_used`
 
-            **Requires Red 3.3 and discord.py 1.3**
+            ** requires manage_channel permissions**
             `invite_created`
             `invite_deleted`
         """
