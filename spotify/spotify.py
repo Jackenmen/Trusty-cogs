@@ -58,7 +58,7 @@ class Spotify(commands.Cog):
     """
 
     __author__ = ["TrustyJAID", "NeuroAssassin"]
-    __version__ = "1.4.3"
+    __version__ = "1.4.4"
 
     def __init__(self, bot):
         self.bot = bot
@@ -140,6 +140,8 @@ class Spotify(commands.Cog):
         await self._ready.wait()
 
     def cog_unload(self):
+        if DASHBOARD:
+            self.rpc_extension.unload()
         if self._sender:
             self.bot.loop.create_task(self._sender.client.aclose())
 
@@ -304,7 +306,10 @@ class Spotify(commands.Cog):
         if not user_token:
             return
         user_spotify = tekore.Spotify(sender=self._sender)
-        action = {v: k for k, v in listen_for.items()}[str(payload.emoji)]
+        actions = {v: k for k, v in listen_for.items()}
+        if str(payload.emoji) not in actions:
+            return
+        action = actions[str(payload.emoji)]
         if action == "play" or action == "playpause":
             # play the song if it exists
             try:
@@ -319,6 +324,7 @@ class Spotify(commands.Cog):
                         return
                     elif message.embeds:
                         em = message.embeds[0]
+                        query = None
                         if em.description:
                             look = f"{em.title if em.title else ''}-{em.description}"
                             find = re.search(r"\[(.+)\]", look)
