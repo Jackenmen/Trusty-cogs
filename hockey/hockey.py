@@ -1314,9 +1314,9 @@ class Hockey(HockeyDev, commands.Cog):
         now = datetime.utcnow()
         saved = datetime.fromtimestamp(await self.config.player_db())
         path = cog_data_path(self) / "players.json"
-        if (now - saved) > timedelta(days=1):
+        if (now - saved) > timedelta(days=1) or not path.exists():
             async with aiohttp.ClientSession() as session:
-                async with session.get("https://records.nhl.com/site/api/player") as resp:
+                async with session.get("https://records.nhl.com/site/api/player?include=id&include=fullName&include=onRoster") as resp:
                     with path.open(encoding="utf-8", mode="w") as f:
                         json.dump(await resp.json(), f)
             await self.config.player_db.set(int(now.timestamp()))
@@ -1348,23 +1348,24 @@ class Hockey(HockeyDev, commands.Cog):
         `[season]` The season to get stats data on format can be `YYYY` or `YYYYYYYY`
         `<search>` The name of the player to search for
         """
-        season_str = None
-        if season:
-            if season.group(3):
-                if (int(season.group(3)) - int(season.group(1))) > 1:
-                    return await ctx.send(_("Dates must be only 1 year apart."))
-                if (int(season.group(3)) - int(season.group(1))) <= 0:
-                    return await ctx.send(_("Dates must be only 1 year apart."))
-                if int(season.group(1)) > datetime.now().year:
-                    return await ctx.send(_("Please select a year prior to now."))
-                season_str = f"{season.group(1)}{season.group(3)}"
-            else:
-                if int(season.group(1)) > datetime.now().year:
-                    return await ctx.send(_("Please select a year prior to now."))
-                year = int(season.group(1)) + 1
-                season_str = f"{season.group(1)}{year}"
-        log.debug(season)
-        players = await self.player_id_lookup(inactive, search)
+        async with ctx.typing():
+            season_str = None
+            if season:
+                if season.group(3):
+                    if (int(season.group(3)) - int(season.group(1))) > 1:
+                        return await ctx.send(_("Dates must be only 1 year apart."))
+                    if (int(season.group(3)) - int(season.group(1))) <= 0:
+                        return await ctx.send(_("Dates must be only 1 year apart."))
+                    if int(season.group(1)) > datetime.now().year:
+                        return await ctx.send(_("Please select a year prior to now."))
+                    season_str = f"{season.group(1)}{season.group(3)}"
+                else:
+                    if int(season.group(1)) > datetime.now().year:
+                        return await ctx.send(_("Please select a year prior to now."))
+                    year = int(season.group(1)) + 1
+                    season_str = f"{season.group(1)}{year}"
+            log.debug(season)
+            players = await self.player_id_lookup(inactive, search)
         if players != []:
             await BaseMenu(
                 source=PlayerPages(pages=players, season=season_str),
@@ -1759,12 +1760,18 @@ class Hockey(HockeyDev, commands.Cog):
                     await ctx.send(msg)
 
     async def save_pickems_unload(self):
-        async with self.pickems_save_lock:
-            for guild_id, pickems in self.all_pickems.items():
-                guild_obj = discord.Object(id=int(guild_id))
-                await self.config.guild(guild_obj).pickems.set(
-                    {name: p.to_json() for name, p in pickems.items()}
-                )
+        try:
+            async with self.pickems_save_lock:
+                for guild_id, pickems in self.all_pickems.items():
+                    guild_obj = discord.Object(id=int(guild_id))
+                    await self.config.guild(guild_obj).pickems.set(
+                        {name: p.to_json() for name, p in pickems.items()}
+                    )
+        except AttributeError:
+            # I removed this for testing most likely
+            pass
+        except Exception:
+            log.exception("Something went wrong with the pickems unload")
 
     def cog_unload(self):
         self.bot.loop.create_task(self.session.close())
