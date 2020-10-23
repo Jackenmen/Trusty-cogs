@@ -181,6 +181,10 @@ class TwitchAPI:
         log.debug(f"{len(follows)} of {total}")
         return follows, total
 
+    async def get_all_streams(self):
+        """Returns all streams for followed users"""
+        raise NotImplementedError()
+
     async def get_profile_from_name(self, twitch_name: str) -> TwitchProfile:
         url = "{}/users?login={}".format(BASE_URL, twitch_name)
         return TwitchProfile.from_json(await self.get_response(url))
@@ -272,9 +276,17 @@ class TwitchAPI:
 
     async def send_clips_update(self, clip: dict, clip_data: dict):
         tasks = []
+        created_at = datetime.strptime(clip["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+        age = datetime.utcnow() - created_at
         msg = f"{clip_data['display_name']} has a new clip! {clip['url']}"
-        for channel in clip_data["channels"]:
-            channel = self.bot.get_channel(channel)
+        for channel, info in clip_data["channels"].items():
+            channel = self.bot.get_channel(int(channel))
+            if not channel:
+                continue
+            if age.total_seconds() > info["check_back"]:
+                continue
+            if clip["view_count"] < info["view_count"]:
+                continue
             if channel and channel.permissions_for(channel.guild.me).send_messages:
                 tasks.append(channel.send(msg))
         await asyncio.gather(*tasks)
