@@ -44,6 +44,10 @@ class RoleEvents:
             member = guild.get_member(payload.user_id)
             if not role or not member:
                 return
+            if member.bot:
+                return
+            if await self.check_guild_verification(member, guild):
+                return
             await self.give_roles(member, [role], _("Reaction Role"))
 
     @commands.Cog.listener()
@@ -65,11 +69,13 @@ class RoleEvents:
         if key in guild_settings:
             # add roles
             role = guild.get_role(guild_settings[key])
-            if not await self.config.role(role).selfremoveable():
+            if not await self.config.role(role).selfremovable():
                 return
             log.debug("Removing role")
             member = guild.get_member(payload.user_id)
             if not role or not member:
+                return
+            if member.bot:
                 return
             await self.remove_roles(member, [role], _("Reaction Role"))
 
@@ -157,36 +163,29 @@ class RoleEvents:
         guild = member.guild
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
-        sticky_roles = await self.config.guild(guild).sticky_roles()
         to_reapply = await self.config.member(member).sticky_roles()
-        if not sticky_roles:
-            return
-
         save = False
-
         for role in member.roles:
-            if role.id in sticky_roles:
-                if role.id not in to_reapply:
-                    to_reapply.append(role.id)
-                    save = True
+            if not await self.config.role(role).sticky():
+                continue
+            if role.id not in to_reapply:
+                to_reapply.append(role.id)
+                save = True
 
         if save:
-            await self.config.member(member).to_reapply.set(to_reapply)
+            await self.config.member(member).sticky_roles.set(to_reapply)
 
     async def _sticky_join(self, member: discord.Member):
         guild = member.guild
         if await self.bot.cog_disabled_in_guild(self, guild):
             return
-        sticky_roles = await self.config.guild(guild).sticky_roles()
-        to_reapply = await self.config.member(member).to_reapply()
+        to_reapply = await self.config.member(member).sticky_roles()
         if not to_reapply:
             return
 
         to_add = []
 
         for role_id in to_reapply:
-            if role_id not in sticky_roles:
-                continue
             role = guild.get_role(role_id)
             if role:
                 to_add.append(role)

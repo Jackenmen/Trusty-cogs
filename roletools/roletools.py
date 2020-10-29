@@ -22,7 +22,7 @@ class RoleTools(RoleEvents, commands.Cog):
     """
 
     __author__ = ["TrustyJAID"]
-    __version__ = "1.0.0"
+    __version__ = "1.0.1"
 
     def __init__(self, bot):
         self.bot = bot
@@ -46,8 +46,7 @@ class RoleTools(RoleEvents, commands.Cog):
         self.settings = {}
 
     async def initalize(self):
-        await self.bot.wait_until_red_ready()
-        if await self.config.version() < "1.0.0":
+        if await self.config.version() < "1.0.1":
             sticky_role_config = Config.get_conf(
                 None, identifier=1358454876, cog_name="StickyRoles"
             )
@@ -60,21 +59,26 @@ class RoleTools(RoleEvents, commands.Cog):
                     role = guild.get_role(role_id)
                     if role:
                         await self.config.role(role).sticky.set(True)
-            auto_role_config = Config.get_conf(
-                None, identifier=45463543548, cog_name="StickyRoles"
-            )
+            auto_role_config = Config.get_conf(None, identifier=45463543548, cog_name="Autorole")
             auto_settings = await auto_role_config.all_guilds()
             for guild_id, data in auto_settings.items():
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
                     continue
-                if not data["ENABLED"] or data["AGREE_CHANNEL"] is not None:
+                if ("ENABLED" in data and not data["ENABLED"]) or (
+                    "AGREE_CHANNEL" in data and data["AGREE_CHANNEL"] is not None
+                ):
+                    continue
+                if "ROLE" not in data:
                     continue
                 for role_id in data["ROLE"]:
                     role = guild.get_role(role_id)
                     if role:
                         await self.config.role(role).auto.set(True)
-            await self.config.version.set("1.0.0")
+                        async with self.config.guild_from_id(guild_id).auto_roles() as auto_roles:
+                            if role.id not in auto_roles:
+                                auto_roles.append(role.id)
+            await self.config.version.set("1.0.1")
 
         self.settings = await self.config.all_guilds()
 
@@ -105,7 +109,7 @@ class RoleTools(RoleEvents, commands.Cog):
                 return await ctx.send(
                     _(
                         "The role {role} is not self assignable. Run the command "
-                        "`{prefix}roletools sticky yes {role}` to make it self assignable."
+                        "`{prefix}roletools selfadd yes {role}` to make it self assignable."
                     ).format(role=role.name, prefix=ctx.clean_prefix)
                 )
         if set_to is True:
@@ -127,7 +131,7 @@ class RoleTools(RoleEvents, commands.Cog):
         If not provided the current settingwill be shown instead.
         `<role>` The role you want to set.
         """
-        cur_setting = await self.config.role(role).selfremoveable()
+        cur_setting = await self.config.role(role).selfremovable()
         if set_to is None:
             if cur_setting:
                 return await ctx.send(_("The role {role} is self removeable.").format(role=role))
@@ -139,10 +143,10 @@ class RoleTools(RoleEvents, commands.Cog):
                     ).format(role=role.name, prefix=ctx.clean_prefix)
                 )
         if set_to is True:
-            await self.config.role(role).selfremoveable.set(True)
+            await self.config.role(role).selfremovable.set(True)
             return await ctx.send(_("{role} is now self removeable.").format(role=role.name))
         if set_to is False:
-            await self.config.role(role).selfremoveable.set(False)
+            await self.config.role(role).selfremovable.set(False)
             return await ctx.send(_("{role} is no longer self removeable.").format(role=role.name))
 
     @roletools.command()
@@ -198,7 +202,7 @@ class RoleTools(RoleEvents, commands.Cog):
                     _(
                         "The role {role} is not automatically applied "
                         "when a user joins. Run the command "
-                        "`{prefix}roletools sticky yes {role}` to make "
+                        "`{prefix}roletools auto yes {role}` to make "
                         "it automatically apply when a user joins."
                     ).format(role=role.name, prefix=ctx.clean_prefix)
                 )
@@ -206,6 +210,8 @@ class RoleTools(RoleEvents, commands.Cog):
             async with self.config.guild(ctx.guild).auto_roles() as current_roles:
                 if role.id not in current_roles:
                     current_roles.append(role.id)
+                if ctx.guild.id not in self.settings:
+                    self.settings = await self.config.guild(ctx.guild).all()
                 if role.id not in self.settings[ctx.guild.id]["auto_roles"]:
                     self.settings[ctx.guild.id]["auto_roles"].append(role.id)
             await self.config.role(role).auto.set(True)
@@ -216,12 +222,15 @@ class RoleTools(RoleEvents, commands.Cog):
             async with self.config.guild(ctx.guild).auto_roles() as current_roles:
                 if role.id in current_roles:
                     current_roles.remove(role.id)
-                if role.id not in self.settings[ctx.guild.id]["auto_roles"]:
+                if (
+                    ctx.guild.id in self.settings
+                    and role.id in self.settings[ctx.guild.id]["auto_roles"]
+                ):
                     self.settings[ctx.guild.id]["auto_roles"].remove(role.id)
             await self.config.role(role).auto.set(False)
             return await ctx.send(_("That role is no automatically applied when a user joins."))
 
-    @roletools.command(aliases=["reactionroles"])
+    @roletools.command(aliases=["reactionroles", "reactrole"])
     @commands.admin_or_permissions(manage_roles=True)
     async def reactroles(self, ctx: Context):
         """
@@ -231,14 +240,15 @@ class RoleTools(RoleEvents, commands.Cog):
             return await ctx.send(_("There are no bound roles in this server."))
         msg = _("Reaction Roles in {guild}\n").format(guild=ctx.guild.name)
         for key, role_id in self.settings[ctx.guild.id]["reaction_roles"].items():
-            msg_id, channel_id, emoji = key.split("-")
+            channel_id, msg_id, emoji = key.split("-")
             if emoji.isdigit():
                 emoji = self.bot.get_emoji(int(emoji))
             role = ctx.guild.get_role(role_id)
-            channel = ctx.guild.get_channel(channel_id)
+            channel = ctx.guild.get_channel(int(channel_id))
             try:
-                message = await channel.fetch_message(msg_id)
+                message = await channel.fetch_message(int(msg_id))
             except Exception:
+                log.exception("aaaaa")
                 message = None
             msg += _("{emoji} - {role} [Reaction Message]({message})\n").format(
                 role=role.name, emoji=emoji, message=message.jump_url if message else "None"
@@ -406,7 +416,9 @@ class RoleTools(RoleEvents, commands.Cog):
         `[role_emoji...]` Must be a role followed by the emoji tied to that role
         """
         if not message.guild or message.guild.id != ctx.guild.id:
-            return await ctx.send(_("You cannot add a Reaction Role to a message not in this guild."))
+            return await ctx.send(
+                _("You cannot add a Reaction Role to a message not in this guild.")
+            )
         added = []
         not_added = []
         async with self.config.guild(ctx.guild).reaction_roles() as cur_setting:
