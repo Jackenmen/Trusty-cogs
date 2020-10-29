@@ -29,7 +29,7 @@ class RoleEvents:
             return
         if guild.id not in self.settings:
             return
-        if getattr(payload.emoji, "id"):
+        if getattr(payload.emoji, "id", None):
             key = f"{payload.channel_id}-{payload.message_id}-{payload.emoji.id}"
         else:
             key = f"{payload.channel_id}-{payload.message_id}-{payload.emoji}"
@@ -40,14 +40,15 @@ class RoleEvents:
             role = guild.get_role(guild_settings[key])
             if not await self.config.role(role).selfassignable():
                 return
-            log.debug("Adding role")
             member = guild.get_member(payload.user_id)
             if not role or not member:
                 return
             if member.bot:
                 return
             if await self.check_guild_verification(member, guild):
+                log.info("Ignoring user due to verification check.")
                 return
+            log.debug("Adding role")
             await self.give_roles(member, [role], _("Reaction Role"))
 
     @commands.Cog.listener()
@@ -60,23 +61,23 @@ class RoleEvents:
             return
         if guild.id not in self.settings:
             return
-        if getattr(payload.emoji, "id"):
+        if getattr(payload.emoji, "id", None):
             key = f"{payload.channel_id}-{payload.message_id}-{payload.emoji.id}"
         else:
             key = f"{payload.channel_id}-{payload.message_id}-{payload.emoji}"
         guild_settings = self.settings[guild.id]["reaction_roles"]
-        key = f"{payload.channel_id}-{payload.message_id}-{payload.emoji}"
         if key in guild_settings:
             # add roles
             role = guild.get_role(guild_settings[key])
             if not await self.config.role(role).selfremovable():
                 return
-            log.debug("Removing role")
+
             member = guild.get_member(payload.user_id)
             if not role or not member:
                 return
             if member.bot:
                 return
+            log.info("Removing role")
             await self.remove_roles(member, [role], _("Reaction Role"))
 
     @commands.Cog.listener()
@@ -126,7 +127,7 @@ class RoleEvents:
         if not guild.me.guild_permissions.manage_roles:
             return
         for role in roles:
-            if role is None or role > guild.me.top_role:
+            if role is None or role.position >= guild.me.top_role.position:
                 continue
             await member.add_roles(role, reason=reason)
 
@@ -142,11 +143,7 @@ class RoleEvents:
         if not guild.me.guild_permissions.manage_roles:
             return
         for role in roles:
-            if role is None or role > guild.me.top_role:
-                if role is None:
-                    log.debug("A role could not be found.")
-                if role > guild.me.top_role:
-                    log.debug("A role was tried to be added that is higher than my own roles.")
+            if role is None or role.position >= guild.me.top_role.position:
                 continue
             await member.remove_roles(role, reason=reason)
 
