@@ -129,7 +129,7 @@ class RoleTools(RoleEvents, commands.Cog):
         self, ctx: Context, set_to: Optional[bool] = None, *, role: RoleHierarchyConverter
     ):
         """
-        Set whether or not a user can apply the role to themselves.
+        Set whether or not a user can remove the role from themselves.
 
         `[set_to]` optional boolean of what to set the setting to.
         If not provided the current settingwill be shown instead.
@@ -310,7 +310,7 @@ class RoleTools(RoleEvents, commands.Cog):
         Create a reaction role
 
         `<message>` can be the channel_id-message_id pair
-        from copying message ID while holding CTRL or a message link
+        from copying message ID while holding SHIFT or a message link
         `<emoji>` The emoji you want people to react with to get the role.
         `<role>` The role you want people to receive for reacting.
         """
@@ -326,8 +326,8 @@ class RoleTools(RoleEvents, commands.Cog):
             key = f"{message.channel.id}-{message.id}-{use_emoji}"
             send_to_react = False
             try:
-                await message.add_reaction(emoji.strip(r"\N{VARIATION SELECTOR-16}"))
-            except Exception:
+                await message.add_reaction(str(emoji).strip(r"\N{VARIATION SELECTOR-16}"))
+            except discord.HTTPException:
                 send_to_react = True
             if ctx.guild.id not in self.settings:
                 self.settings[ctx.guild.id] = await self.config.guild(ctx.guild).all()
@@ -385,7 +385,7 @@ class RoleTools(RoleEvents, commands.Cog):
         Remove a reaction role
 
         `<message>` can be the channel_id-message_id pair
-        from copying message ID while holding CTRL or a message link
+        from copying message ID while holding SHIFT or a message link
         `<emoji>` The emoji you want people to react with to get the role.
         `<role>` The role you want people to receive for reacting.
         """
@@ -446,7 +446,7 @@ class RoleTools(RoleEvents, commands.Cog):
         Create multiple roles reactions for a single message
 
         `<message>` can be the channel_id-message_id pair
-        from copying message ID while holding CTRL or a message link
+        from copying message ID while holding SHIFT or a message link
         `[role_emoji...]` Must be a role followed by the emoji tied to that role
         """
         if not message.guild or message.guild.id != ctx.guild.id:
@@ -469,7 +469,7 @@ class RoleTools(RoleEvents, commands.Cog):
                         await message.add_reaction(
                             str(emoji).strip().strip(r"\N{VARIATION SELECTOR-16}")
                         )
-                    except Exception:
+                    except discord.HTTPException:
                         send_to_react = True
                         log.exception("could not add reaction to message")
                         pass
