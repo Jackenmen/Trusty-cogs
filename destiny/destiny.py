@@ -5,12 +5,11 @@ import json
 import functools
 from pathlib import Path
 from typing import List, Literal, Optional
-from copy import copy
 
 import discord
 from redbot.core import Config, checks, commands
 from redbot.core.i18n import Translator, cog_i18n
-from redbot.core.utils.chat_formatting import pagify, humanize_timedelta
+from redbot.core.utils.chat_formatting import pagify, humanize_timedelta, humanize_list
 from redbot.core.utils.menus import DEFAULT_CONTROLS, menu, start_adding_reactions
 from redbot.core.utils.predicates import ReactionPredicate
 
@@ -37,7 +36,7 @@ class Destiny(DestinyAPI, commands.Cog):
     Get information from the Destiny 2 API
     """
 
-    __version__ = "1.4.0"
+    __version__ = "1.4.2"
     __author__ = "TrustyJAID"
 
     def __init__(self, bot):
@@ -51,7 +50,6 @@ class Destiny(DestinyAPI, commands.Cog):
         self.config.register_global(**default_global, force_registration=True)
         self.config.register_user(**default_user, force_registration=True)
         self.throttle: float = 0
-        # self.manifest_download_start = bot.loop.create_task(self.get_manifest())
 
     def format_help_for_context(self, ctx: commands.Context) -> str:
         """
@@ -154,16 +152,16 @@ class Destiny(DestinyAPI, commands.Cog):
                 all_perks = await self.get_definition("DestinyInventoryItemDefinition", pool_perks)
                 try:
                     key_hash = all_perks[0]["itemCategoryHashes"][0]
-                    key_data = await self.get_definition("DestinyItemCategoryDefinition", [key_hash])
+                    key_data = await self.get_definition(
+                        "DestinyItemCategoryDefinition", [key_hash]
+                    )
                     key = key_data[0]["displayProperties"]["name"]
                     if key in perks:
                         key = f"{key} {count}"
                         count += 1
                 except IndexError:
                     key = _("Perk {count}").format(count=slot_counter)
-                perks[key] = "\n".join(
-                    [p["displayProperties"]["name"] for p in all_perks]
-                )
+                perks[key] = "\n".join([p["displayProperties"]["name"] for p in all_perks])
                 slot_counter += 1
                 continue
             if "reusablePlugSetHash" in socket:
@@ -176,16 +174,16 @@ class Destiny(DestinyAPI, commands.Cog):
                 all_perks = await self.get_definition("DestinyInventoryItemDefinition", pool_perks)
                 try:
                     key_hash = all_perks[0]["itemCategoryHashes"][0]
-                    key_data = await self.get_definition("DestinyItemCategoryDefinition", [key_hash])
+                    key_data = await self.get_definition(
+                        "DestinyItemCategoryDefinition", [key_hash]
+                    )
                     key = key_data[0]["displayProperties"]["name"]
                     if key in perks:
                         key = f"{key} {count}"
                         count += 1
                 except IndexError:
                     key = _("Perk {count}").format(count=slot_counter)
-                perks[key] = "\n".join(
-                    [p["displayProperties"]["name"] for p in all_perks]
-                )
+                perks[key] = "\n".join([p["displayProperties"]["name"] for p in all_perks])
                 slot_counter += 1
                 continue
             perk_hash = socket["singleInitialItemHash"]
@@ -1263,12 +1261,32 @@ class Destiny(DestinyAPI, commands.Cog):
         See the current manifest version and optionally re-download it
         """
         if not d1:
+            try:
+                headers = await self.build_headers()
+            except Exception:
+                return await ctx.send(
+                    _(
+                        "You need to set your API authentication tokens with `[p]destiny token` first."
+                    )
+                )
+            manifest_data = await self.request_url(
+                f"{BASE_URL}/Destiny2/Manifest/", headers=headers
+            )
             version = await self.config.manifest_version()
             if not version:
-                version = "Not Downloaded"
-            await ctx.send(_("Current manifest version is {version}").format(version=version))
+                version = _("Not Downloaded")
+            msg = _("Current manifest version is {version}.").format(version=version)
+            redownload = _("re-download")
+            if manifest_data["version"] != version:
+                msg += _("\n\nThere is an update available to version {version}").format(
+                    version=manifest_data["version"]
+                )
+                redownload = _("download")
+            await ctx.send(msg)
             await ctx.trigger_typing()
-            msg = await ctx.send(_("Would you like to re-download the manifest?"))
+            msg = await ctx.send(
+                _("Would you like to {redownload} the manifest?").format(redownload=redownload)
+            )
             start_adding_reactions(msg, ReactionPredicate.YES_OR_NO_EMOJIS)
             pred = ReactionPredicate.yes_or_no(msg, ctx.author)
             try:
@@ -1279,6 +1297,7 @@ class Destiny(DestinyAPI, commands.Cog):
                 try:
                     version = await self.get_manifest()
                 except Exception:
+                    log.exception("Error getting destiny manifest")
                     return await ctx.send(_("There was an issue downloading the manifest."))
                 await msg.delete()
                 await ctx.send(f"Manifest {version} was downloaded.")
