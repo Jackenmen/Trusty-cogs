@@ -176,15 +176,28 @@ class RoleEvents:
                 for role_id in inclusive:
                     log.debug(role_id)
                     r = guild.get_role(role_id)
-                    if r:
+                    if r and await self.config.role(r).selfassignable():
                         inclusive_roles.append(r)
                 await member.add_roles(*inclusive_roles, reason=_("Inclusive Roles"))
             if exclusive := await self.config.role(role).exclusive_to():
                 exclusive_roles = []
+                skip_role_assign = False
                 for role_id in exclusive:
                     r = guild.get_role(role_id)
-                    if r in member.roles:
+                    if r in member.roles and await self.config.role(r).selfremovable():
                         exclusive_roles.append(r)
+                    else:
+                        # we want to only remove the role (and assign the new one)
+                        # if the current role is self-removable
+                        # If the role is not self-removable we don't want
+                        # to apply the initial role to begin with
+                        skip_role_assign = True
+                if skip_role_assign:
+                    # we want to skip assigning the role which means the continue
+                    # needs to be here
+                    # I don't think we should be removing roles at all if this
+                    # is the case but if required this can be adjusted in the future
+                    continue
                 await self.remove_roles(member, exclusive_roles, _("Exclusive Roles"))
             to_add.append(role)
         await member.add_roles(*to_add, reason=reason)
