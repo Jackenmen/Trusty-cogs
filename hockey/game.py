@@ -596,7 +596,7 @@ class Game:
         state_embed = await self.game_state_embed()
         state_text = await self.game_state_text()
         tasks = []
-        all_channels = bot.get_cog("Hockey").config.all_channels()
+        all_channels = await bot.get_cog("Hockey").config.all_channels()
         async for channel_id, data in AsyncIter(all_channels.items(), steps=100):
             channel = await get_channel_obj(bot, channel_id, data)
             if not channel:
@@ -627,7 +627,7 @@ class Game:
         del guild_settings["pickems"]  # No need to keep this in memory twice
         game_day_channels = guild_settings["gdc"]
         can_embed = channel.permissions_for(guild.me).embed_links
-        publish_states = False  # await config.channel(channel).publish_states()
+        publish_states = []  # await config.channel(channel).publish_states()
         # can_manage_webhooks = False  # channel.permissions_for(guild.me).manage_webhooks
 
         if self.game_state == "Live":
