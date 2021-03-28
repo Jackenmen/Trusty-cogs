@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from copy import copy
 from datetime import datetime
 from typing import Literal
 from pathlib import Path
@@ -35,7 +36,7 @@ class Hockey(HockeyCommands, HockeySetCommands, GameDayChannels, HockeyDev, comm
     Gather information and post goal updates for NHL hockey teams
     """
 
-    __version__ = "2.15.1"
+    __version__ = "2.15.2"
     __author__ = ["TrustyJAID"]
 
     def __init__(self, bot):
@@ -285,7 +286,8 @@ class Hockey(HockeyCommands, HockeySetCommands, GameDayChannels, HockeyDev, comm
         try:
             async with self.pickems_save_lock:
                 log.debug("Saving pickems data")
-                for guild_id, pickems in self.all_pickems.items():
+                all_pickems = copy(self.all_pickems)
+                for guild_id, pickems in all_pickems.items():
                     data = {}
                     for name, pickem in pickems.items():
                         pickem = await pickem.check_winner()
@@ -297,7 +299,8 @@ class Hockey(HockeyCommands, HockeySetCommands, GameDayChannels, HockeyDev, comm
 
     @pickems_loop.after_loop
     async def after_pickems_loop(self):
-        await self.save_pickems_data()
+        if self.pickems_loop.is_being_cancelled():
+            await self.save_pickems_data()
 
     @pickems_loop.before_loop
     async def before_pickems_loop(self):
@@ -330,17 +333,22 @@ class Hockey(HockeyCommands, HockeySetCommands, GameDayChannels, HockeyDev, comm
         if payload.guild_id is None:
             return
         guild = self.bot.get_guild(payload.guild_id)
-        channel = guild.get_channel(payload.channel_id)
-        if str(guild.id) not in self.all_pickems:
+        if not guild:
             return
-        try:
-            msg = await channel.fetch_message(id=payload.message_id)
-        except (discord.errors.NotFound, discord.errors.Forbidden):
+        channel = guild.get_channel(payload.channel_id)
+        if not channel:
+            return
+        if str(guild.id) not in self.all_pickems:
             return
         user = guild.get_member(payload.user_id)
         # log.debug(payload.user_id)
         if not user or user.bot:
             return
+        try:
+            msg = await channel.fetch_message(id=payload.message_id)
+        except (discord.errors.NotFound, discord.errors.Forbidden):
+            return
+
         is_pickems_vote = False
         for name, pickem in self.all_pickems[str(guild.id)].items():
             if msg.id in pickem.message:

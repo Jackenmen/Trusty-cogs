@@ -1014,8 +1014,8 @@ class ServerStats(commands.Cog):
                     if m := guild.get_member(member.id) and guild.get_member(ctx.author.id):
                         guild_list.append(m)
             embed_list = []
+            robot = "\N{ROBOT FACE}" if member.bot else ""
             if guild_list != []:
-                robot = "\N{ROBOT FACE}" if member.bot else ""
                 msg = f"**{member}** ({member.id}) {robot}" + _("is on:\n\n")
                 embed_msg = ""
                 for m in guild_list:
@@ -1039,7 +1039,9 @@ class ServerStats(commands.Cog):
                         embed.description = created_on
                         embed.set_thumbnail(url=member.avatar_url)
                         embed.colour = await ctx.embed_colour()
-                        embed.set_author(name=f"{member} ({member.id}) {robot}", icon_url=member.avatar_url)
+                        embed.set_author(
+                            name=f"{member} ({member.id}) {robot}", icon_url=member.avatar_url
+                        )
                         for page in pagify(em, ["\n"], page_length=1024):
                             embed.add_field(name=_("Shared Servers"), value=page)
                         embed_list.append(embed)
@@ -1048,6 +1050,18 @@ class ServerStats(commands.Cog):
                         embed_list.append(page)
             else:
                 if ctx.channel.permissions_for(ctx.me).embed_links:
+                    embed = discord.Embed()
+                    since_created = (ctx.message.created_at - member.created_at).days
+                    user_created = member.created_at.strftime("%d %b %Y %H:%M")
+                    created_on = _("Joined Discord on {}\n({} days ago)").format(
+                        user_created, since_created
+                    )
+                    embed.description = created_on
+                    embed.set_thumbnail(url=member.avatar_url)
+                    embed.colour = await ctx.embed_colour()
+                    embed.set_author(
+                        name=f"{member} ({member.id}) {robot}", icon_url=member.avatar_url
+                    )
                     embed_list.append(embed)
                 else:
                     msg = f"**{member}** ({member.id}) " + _("is not in any shared servers!")
