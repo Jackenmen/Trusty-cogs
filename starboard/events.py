@@ -69,8 +69,10 @@ class StarboardEvents:
                 ref_msg = getattr(msg_ref, "resolved", None)
                 try:
                     ref_text = ref_msg.system_content
-                    if len(ref_text) > 1024:
-                        ref_text = ref_text[:1023] + "\N{HORIZONTAL ELLIPSIS}"
+                    ref_link = f"\n[message]({ref_msg.jump_url})"
+                    if len(ref_text + ref_link) > 1024:
+                        ref_text = ref_text[:len(ref_link) - 1] + "\N{HORIZONTAL ELLIPSIS}"
+                    ref_text += ref_link
                     em.add_field(
                         name=_("Replying to {author}").format(author=ref_msg.author.display_name),
                         value=ref_text,
