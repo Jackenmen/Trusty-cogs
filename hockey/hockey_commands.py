@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Literal, Optional, List
+from typing import List, Literal, Optional
 from urllib.parse import quote
 
 import discord
@@ -14,7 +14,14 @@ from redbot.core.utils.chat_formatting import pagify
 
 from .abc import MixinMeta
 from .constants import BASE_URL, TEAMS
-from .helper import YEAR_RE, HockeyStandings, HockeyTeams, TeamDateFinder, YearFinder, utc_to_local
+from .helper import (
+    YEAR_RE,
+    HockeyStandings,
+    HockeyTeams,
+    TeamDateFinder,
+    YearFinder,
+    utc_to_local,
+)
 from .menu import (
     BaseMenu,
     ConferenceStandingsPages,
@@ -470,7 +477,7 @@ class HockeyCommands(MixinMeta):
         if user_position is not None:
             user = leaderboard[user_position][1]
             wins = user["season"]
-            total = user[total_str]
+            total = user[total_str] or 1
             losses = user[total_str] - user["season"]
             position = _(
                 "{member}, you're #{number} on the {leaderboard_type} leaderboard!\n"
@@ -500,7 +507,9 @@ class HockeyCommands(MixinMeta):
     @hockey_commands.command()
     @commands.guild_only()
     @commands.bot_has_permissions(read_message_history=True, add_reactions=True)
-    async def leaderboard(self, ctx: commands.Context, *, leaderboard_type: str = "seasonal") -> None:
+    async def leaderboard(
+        self, ctx: commands.Context, *, leaderboard_type: str = "seasonal"
+    ) -> None:
         """
         Shows the current server leaderboard
 
