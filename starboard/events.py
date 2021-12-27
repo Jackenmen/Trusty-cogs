@@ -202,6 +202,10 @@ class StarboardEvents:
                     msg = await channel.fetch_message(payload.message_id)
                 except (discord.errors.NotFound, discord.Forbidden):
                     return
+                reactions = [payload.user_id]
+                if payload.user_id == msg.author.id:
+                    if not starboard.selfstar:
+                        reactions.remove(payload.user_id)
                 star_message = StarboardMessage(
                     guild=guild.id,
                     original_message=payload.message_id,
@@ -209,7 +213,7 @@ class StarboardEvents:
                     new_message=None,
                     new_channel=None,
                     author=msg.author.id,
-                    reactions=[payload.user_id],
+                    reactions=reactions,
                 )
             starboard.stars_added += 1
             key = f"{payload.channel_id}-{payload.message_id}"
@@ -224,6 +228,10 @@ class StarboardEvents:
             try:
                 msg = await channel.fetch_message(payload.message_id)
             except (discord.errors.NotFound, discord.Forbidden):
+                return
+            if not starboard.selfstar and msg.author.id == payload.user_id:
+                log.debug("Is a selfstar so let's return")
+                # this is here to prevent 1 threshold selfstars
                 return
             em = await self._build_embed(guild, msg, starboard)
             count_msg = "{} **#{}**".format(payload.emoji, count)
