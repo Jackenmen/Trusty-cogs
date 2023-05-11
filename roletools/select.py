@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Union
 
 import discord
@@ -55,24 +56,23 @@ class SelectRole(discord.ui.Select):
         )
         self.name = name
         self.disabled_options: List[str] = disabled
+        self.view: SelectRoleView
 
     async def callback(self, interaction: discord.Interaction):
         log.debug("Receiving selection press")
 
         role_ids = []
+        disabled_role = False
         for option in self.values:
             if option.split("-")[1] in self.disabled_options:
+                disabled_role = True
                 continue
             role_ids.append(int(option.split("-")[-1]))
 
-        if role_ids:
-            await interaction.response.defer(ephemeral=True, thinking=True)
-        elif not role_ids and not self.disabled:
-            await interaction.response.send_message(
-                _("One or more of the selected roles are no longer available."), ephemeral=True
-            )
-            await interaction.message.edit()
-            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        msg = ""
+        if disabled_role:
+            msg += _("One or more of the selected roles are no longer available.\n")
         elif self.disabled:
             await interaction.response.send_message(
                 _("This selection has been disabled from giving roles."), ephemeral=True
@@ -82,9 +82,13 @@ class SelectRole(discord.ui.Select):
         guild = interaction.guild
         added_roles = []
         removed_roles = []
+        missing_role = False
+        pending = False
+        wait = None
         for role_id in role_ids:
             role = guild.get_role(role_id)
             if role is None:
+                missing_role = True
                 continue
             if interaction.user.bot:
                 # how? This is what happens when you copy/paste code lol
@@ -94,12 +98,20 @@ class SelectRole(discord.ui.Select):
             config = self.view.cog.config
             if role not in interaction.user.roles:
                 if not await config.role(role).selfassignable():
+                    msg += _(
+                        "{role} Could not be assigned because it is not self assignable."
+                    ).format(role=role.mention)
                     continue
 
-                if await self.view.cog.check_guild_verification(interaction.user, guild):
+                if wait_time := await self.view.cog.check_guild_verification(
+                    interaction.user, guild
+                ):
                     log.debug("Ignoring user due to verification check.")
+                    if wait_time:
+                        wait = datetime.now(timezone.utc) + timedelta(seconds=wait_time)
                     continue
                 if getattr(interaction.user, "pending", False):
+                    pending = True
                     continue
                 log.debug(f"Adding role to {interaction.user.name} in {guild}")
                 response = await self.view.cog.give_roles(
@@ -110,11 +122,21 @@ class SelectRole(discord.ui.Select):
                 added_roles.append(role)
             elif role in interaction.user.roles:
                 if not await config.role(role).selfremovable():
+                    msg += _(
+                        "{role} Could not be removed because it is not self assignable."
+                    ).format(role=role.mention)
                     continue
                 log.debug(f"Removing role from {interaction.user.name} in {guild}")
                 await self.view.cog.remove_roles(interaction.user, [role], _("Role Selection"))
                 removed_roles.append(role)
-        msg = ""
+        if wait is not None:
+            msg += _(
+                "I cannot assign roles to you until you have spent more time in this server. Try again {time}."
+            ).format(time=discord.utils.format_dt(wait))
+        if pending:
+            msg += _("You need to finish your member verification before I can assign you a role.")
+        if missing_role:
+            msg += _("One or more of the selected roles no longer exists.\n")
         if added_roles:
             msg += _("I have given you the following roles: {roles}\n").format(
                 roles=humanize_list([i.mention for i in added_roles])
@@ -133,7 +155,7 @@ class SelectRole(discord.ui.Select):
 
 
 class SelectRoleView(discord.ui.View):
-    def __init__(self, cog: commands.Cog):
+    def __init__(self, cog: RoleToolsMixin):
         self.cog = cog
         super().__init__(timeout=None)
         pass
@@ -303,6 +325,10 @@ class RoleToolsSelect(RoleToolsMixin):
                         )
                         options.append(option)
                     except KeyError:
+                        log.info(
+                            "Select Option named %s no longer exists, adding to select menus disalbe list.",
+                            option_name,
+                        )
                         disabled.append(option_name)
 
                 select = SelectRole(
@@ -426,8 +452,6 @@ class RoleToolsSelect(RoleToolsMixin):
                     ):
                         view.disabled = True
 
-                if name in self.settings.get(ctx.guild.id, {}).get("select_menus", {}):
-                    del self.settings[ctx.guild.id]["select_menus"][name]
                 del select_menus[name.lower()]
                 msg = _("Select Option `{name}` has been deleted.").format(name=name)
                 await ctx.send(msg)
