@@ -1,9 +1,9 @@
 import asyncio
-import logging
 from abc import ABC
 from typing import Any, Dict, Optional, Union
 
 import discord
+from red_commons.logging import getLogger
 from redbot.core import Config, bank, commands
 from redbot.core.bot import Red
 from redbot.core.commands import Context
@@ -26,7 +26,7 @@ from .settings import RoleToolsSettings
 
 roletools = RoleToolsMixin.roletools
 
-log = logging.getLogger("red.Trusty-cogs.RoleTools")
+log = getLogger("red.Trusty-cogs.RoleTools")
 _ = Translator("RoleTools", __file__)
 
 
@@ -44,7 +44,7 @@ def custom_cooldown(ctx: commands.Context) -> Optional[discord.app_commands.Cool
     members = []
 
     for entity in who:
-        log.debug(entity)
+        log.verbose("custom_cooldown entity: %s", entity)
         if isinstance(entity, discord.TextChannel) or isinstance(entity, discord.Role):
             members += entity.members
         elif isinstance(entity, discord.Member):
@@ -85,7 +85,7 @@ class RoleTools(
     """
 
     __author__ = ["TrustyJAID"]
-    __version__ = "1.5.4"
+    __version__ = "1.5.5"
 
     def __init__(self, bot: Red):
         self.bot = bot
@@ -120,7 +120,7 @@ class RoleTools(
         self.config.register_member(sticky_roles=[])
         self.settings: Dict[int, Any] = {}
         self._ready: asyncio.Event = asyncio.Event()
-        self.views = []
+        self.views = {}
 
     def cog_check(self, ctx: commands.Context) -> bool:
         return self._ready.is_set()
@@ -132,7 +132,23 @@ class RoleTools(
         pre_processed = super().format_help_for_context(ctx)
         return f"{pre_processed}\n\nCog Version: {self.__version__}"
 
+    async def load_views(self):
+        self.settings = await self.config.all_guilds()
+        await self.bot.wait_until_red_ready()
+        try:
+            await self.initialize_select()
+        except Exception:
+            log.exception("Error initializing Select")
+        try:
+            await self.initialize_buttons()
+        except Exception:
+            log.exception("Error initializing Buttons")
+        for view in self.views.values():
+            self.bot.add_view(view)
+        self._ready.set()
+
     async def cog_load(self) -> None:
+
         if await self.config.version() < "1.0.1":
             sticky_role_config = Config.get_conf(
                 None, identifier=1358454876, cog_name="StickyRoles"
@@ -168,23 +184,13 @@ class RoleTools(
                             if role.id not in auto_roles:
                                 auto_roles.append(role.id)
             await self.config.version.set("1.0.1")
-
-        self.settings = await self.config.all_guilds()
-        try:
-            await self.initialize_buttons()
-        except Exception:
-            log.exception("Error initializing Buttons")
-
-        try:
-            await self.initialize_select()
-        except Exception:
-            log.exception("Error initializing Select")
-        self._ready.set()
+        loop = asyncio.get_running_loop()
+        loop.create_task(self.load_views())
 
     async def cog_unload(self):
         for view in self.views:
             # Don't forget to remove persistent views when the cog is unloaded.
-            log.debug(f"Stopping view {view}")
+            log.verbose("Stopping view %s", view)
             view.stop()
 
     @roletools.group(invoke_without_command=True)

@@ -8,6 +8,7 @@ import discord
 import moviepy
 import yt_dlp as youtube_dl
 from moviepy.editor import CompositeVideoClip, TextClip, VideoFileClip
+from red_commons.logging import getLogger
 from redbot.core import checks, commands
 from redbot.core.data_manager import cog_data_path
 
@@ -19,7 +20,7 @@ CRAB_LINK = "https://youtu.be/gDLE3LikgUs"
 MIKU_LINK = "https://youtu.be/qeJjQGF6gz4"
 
 FONT_FILE = "https://github.com/matomo-org/travis-scripts/raw/master/fonts/Verdana.ttf"
-log = logging.getLogger("red.trusty-cogs.crabrave")
+log = getLogger("red.trusty-cogs.crabrave")
 
 
 class CrabRave(commands.Cog):
