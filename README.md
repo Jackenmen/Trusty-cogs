@@ -24,7 +24,7 @@ TrustyJAID's Cogs for  [Red-DiscordBot](https://github.com/Cog-Creators/Red-Disc
 | Hockey          | 3.3.1            | <details><summary>Hockey commands</summary>A cog to gather hockey scores, schedules, player data and more!</details>                                                                                                                                                                                                                                                                                                                                          | TrustyJAID                                                                                                    |
 | Hue             | 1.3.0            | <details><summary>Control your philips hue lights with redbot!</summary>Lets you control your philips hue lights with redbot.</details>                                                                                                                                                                                                                                                                                                                       | TrustyJAID                                                                                                    |
 | Imagemaker      | 1.5.2            | <details><summary>Create your own feels!</summary>Show how you really feel. Make someone beautiful. Make something illegal.</details>                                                                                                                                                                                                                                                                                                                         | TrustyJAID, Ivan Seidel (isnowillegal.com), Bruno Lemos (isnowillegal.com), and João Pedro (isnowillegal.com) |
-| Imgflip         | 2.1.0            | <details><summary>Recreation of Red v1 meme generator</summary>Recreation of Red v1 meme generator</details>                                                                                                                                                                                                                                                                                                                                                  | Twentysix and TrustyJAID                                                                                      |
+| Imgflip         | 3.0.0            | <details><summary>Recreation of Red v1 meme generator</summary>Recreation of Red v1 meme generator</details>                                                                                                                                                                                                                                                                                                                                                  | Twentysix and TrustyJAID                                                                                      |
 | Insult          | 1.0.0            | <details><summary>Insult people in a creative way</summary>Insult people in a creative way ![goteem](https://cdn.discordapp.com/emojis/350653489044652052.png?v=1)</details>                                                                                                                                                                                                                                                                                  | Airen, JennJenn, and TrustyJAID                                                                               |
 | InviteBlocklist | 1.1.3            | <details><summary>Block or Allow invite links based on guild ID. Accepts invite links to extract guild ID's.</summary>Automatically delete discord invite links from specific guilds or allow only specified guild invites to be posted.</details>                                                                                                                                                                                                            | TrustyJAID                                                                                                    |
 | MentionPrefix   | 1.1.0            | <details><summary>This cog allows ping the bot to see the prefixes available.</summary>This cog allows ping the bot to see the prefixes available.</details>                                                                                                                                                                                                                                                                                                  | Draper and TrustyJAID                                                                                         |
@@ -48,4 +48,25 @@ TrustyJAID's Cogs for  [Red-DiscordBot](https://github.com/Cog-Creators/Red-Disc
 
 Any questions you can find [TrustyBot](https://discordapp.com/api/oauth2/authorize?client_id=268562382173765643&permissions=2146958583&scope=bot) and myself over on [my server](https://discord.gg/wVVrqej) or on the [Redbot Cog Support server](https://discord.gg/GET4DVk).
 ## Credits
-Thank you to everyone who has pushed me to think about new ideas and implement them.
+Thank you to everyone who has pushed me to think about new ideas and implement them. Including but not limited to:
+- Airen
+- Appu
+- Aziz
+- Bruno Lemos (isnowillegal.com)
+- Cards Against Humanity®
+- DankMemer Team
+- Draper
+- Ivan Seidel (isnowillegal.com)
+- JennJenn
+- João Pedro (isnowillegal.com)
+- NeuroAssassin
+- NotSoSuper
+- Preda
+- RePulsR
+- Sinbad
+- Soulrift
+- Twentysix
+- crhallberg
+- irdumb
+- palmtree5
+- thisisjvgrace
