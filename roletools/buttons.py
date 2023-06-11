@@ -10,7 +10,7 @@ from redbot.core.commands import Context
 from redbot.core.i18n import Translator
 
 from .abc import RoleToolsMixin
-from .converter import ButtonStyleConverter, RoleHierarchyConverter
+from .converter import ButtonStyleConverter, RoleHierarchyConverter, RoleToolsView
 from .menus import BaseMenu, ButtonRolePages
 
 roletools = RoleToolsMixin.roletools
@@ -35,6 +35,7 @@ class ButtonRole(discord.ui.Button):
         )
         self.role_id = role_id
         self.name = name
+        self._rt_type = "button"  # to prevent circular import
 
     def replace_label(self, guild: discord.Guild):
         role = guild.get_role(self.role_id)
@@ -117,6 +118,19 @@ class ButtonRole(discord.ui.Button):
                 ephemeral=True,
             )
         self.replace_label(guild)
+        await self.edit_message(interaction)
+
+    async def edit_message(self, interaction: discord.Interaction):
+        # I dislike this but I have no clue why this particular view
+        # doesn't have the reference to the main one for some items
+        view = self.view.cog.views[interaction.guild.id].get(
+            f"{interaction.message.channel.id}-{interaction.message.id}"
+        )
+        c_ids = {c.custom_id for c in self.view.children}
+        if view is not None:
+            for x in view.children:
+                if x.custom_id not in c_ids:
+                    self.view.add_item(x)
         await interaction.message.edit(view=self.view)
 
 
@@ -176,18 +190,14 @@ class ButtonRoleConverter(discord.app_commands.Transformer):
         return ret
 
 
-class ButtonRoleView(discord.ui.View):
-    def __init__(self, cog: RoleToolsMixin):
-        self.cog = cog
-        super().__init__(timeout=None)
-        pass
-
-
 class RoleToolsButtons(RoleToolsMixin):
     """This class handles setting up button roles"""
 
     async def initialize_buttons(self):
         for guild_id, settings in self.settings.items():
+            if guild_id not in self.views:
+                log.trace("Adding guild ID %s to views in buttons", guild_id)
+                self.views[guild_id] = {}
             for button_name, button_data in settings["buttons"].items():
                 log.verbose("Adding Button %s", button_name)
                 role_id = button_data["role_id"]
@@ -205,10 +215,11 @@ class RoleToolsButtons(RoleToolsMixin):
                 guild = self.bot.get_guild(guild_id)
                 if guild is not None:
                     button.replace_label(guild)
-                for message_ids in button_data.get("messages", []):
-                    if message_ids not in self.views:
-                        self.views[message_ids] = ButtonRoleView(self)
-                    self.views[message_ids].add_item(button)
+                for message_id in set(button_data.get("messages", [])):
+                    if message_id not in self.views[guild_id]:
+                        log.trace("Creating view for button %s", button_name)
+                        self.views[guild_id][message_id] = RoleToolsView(self)
+                    self.views[guild_id][message_id].add_item(button)
 
     @roletools.group(name="buttons", aliases=["button"], with_app_command=False)
     @commands.admin_or_permissions(manage_roles=True)
@@ -250,6 +261,8 @@ class RoleToolsButtons(RoleToolsMixin):
         if " " in name:
             await ctx.send(_("There cannot be a space in the name of a button."))
             return
+        if ctx.guild.id not in self.views:
+            self.views[ctx.guild.id] = {}
         emoji_id = None
         if emoji is not None:
             if not isinstance(emoji, discord.PartialEmoji):
@@ -299,12 +312,14 @@ class RoleToolsButtons(RoleToolsMixin):
             name=name.lower(),
         )
         button.replace_label(ctx.guild)
-        view = ButtonRoleView(self)
+        view = RoleToolsView(self)
         view.add_item(button)
         msg = await ctx.send("Here is how your button will look.", view=view)
         async with self.config.guild(ctx.guild).buttons() as buttons:
-            buttons[name.lower()]["messages"].append(f"{msg.channel.id}-{msg.id}")
-        self.views[f"{msg.channel.id}-{msg.id}"] = view
+            x = set(buttons[name.lower()]["messages"])
+            x.add(f"{msg.channel.id}-{msg.id}")
+            buttons[name.lower()]["messages"] = list(x)
+        self.views[ctx.guild.id][f"{msg.channel.id}-{msg.id}"] = view
 
     @buttons.command(name="delete", aliases=["del", "remove"])
     async def delete_button(self, ctx: Context, *, name: str) -> None:
@@ -313,11 +328,13 @@ class RoleToolsButtons(RoleToolsMixin):
 
         `<name>` - the name of the button you want to delete.
         """
+        if ctx.guild.id not in self.views:
+            self.views[ctx.guild.id] = {}
         async with self.config.guild(ctx.guild).buttons() as buttons:
             if name in buttons:
                 role_id = buttons[name]["role_id"]
                 custom_id = f"{name.lower()}-{role_id}"
-                for view in self.views.values():
+                for view in self.views[ctx.guild.id].values():
                     for child in view.children:
                         if child.custom_id == custom_id:
                             child.disabled = True

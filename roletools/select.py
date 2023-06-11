@@ -11,7 +11,7 @@ from redbot.core.i18n import Translator
 from redbot.core.utils.chat_formatting import humanize_list
 
 from .abc import RoleToolsMixin
-from .converter import RoleHierarchyConverter
+from .converter import RoleHierarchyConverter, RoleToolsView
 from .menus import BaseMenu, SelectMenuPages, SelectOptionPages
 
 roletools = RoleToolsMixin.roletools
@@ -59,7 +59,8 @@ class SelectRole(discord.ui.Select):
         }
         self.name = name
         self.disabled_options: List[str] = disabled
-        self.view: SelectRoleView
+        self.view: RoleToolsView
+        self._rt_type = "select"  # to prevent circular import
 
     def update_options(self, guild: discord.Guild):
         for option in self.options:
@@ -168,19 +169,20 @@ class SelectRole(discord.ui.Select):
                 msg += _("You have made no selections; try again to change your roles.")
             await interaction.followup.send(msg, ephemeral=True)
         self.update_options(guild)
-        await interaction.message.edit(view=self.view)
+        await self.edit_message(interaction)
 
-
-class SelectRoleView(discord.ui.View):
-    def __init__(self, cog: RoleToolsMixin):
-        self.cog = cog
-        super().__init__(timeout=None)
-        pass
-
-    async def on_error(self, interaction: discord.Interaction, error: Exception, item: SelectRole):
-        await interaction.response.send_message(
-            _("An error occured trying to apply a role to you."), ephemeral=True
+    async def edit_message(self, interaction: discord.Interaction):
+        # I dislike this but I have no clue why this particular view
+        # doesn't have the reference to the main one for some items
+        view = self.view.cog.views[interaction.guild.id].get(
+            f"{interaction.message.channel.id}-{interaction.message.id}"
         )
+        c_ids = {c.custom_id for c in self.view.children}
+        if view is not None:
+            for x in view.children:
+                if x.custom_id not in c_ids:
+                    self.view.add_item(x)
+        await interaction.message.edit(view=self.view)
 
 
 class SelectOptionRoleConverter(discord.app_commands.Transformer):
@@ -318,6 +320,9 @@ class RoleToolsSelect(RoleToolsMixin):
 
     async def initialize_select(self) -> None:
         for guild_id, settings in self.settings.items():
+            if guild_id not in self.views:
+                log.trace("Adding guild ID %s to views in selects", guild_id)
+                self.views[guild_id] = {}
             for select_name, select_data in settings["select_menus"].items():
                 log.verbose("Adding Option %s", select_name)
                 options = []
@@ -359,10 +364,12 @@ class RoleToolsSelect(RoleToolsMixin):
                 guild = self.bot.get_guild(guild_id)
                 if guild is not None:
                     select.update_options(guild)
-                for message_id in select_data.get("messages", []):
-                    if message_id not in self.views:
-                        self.views[message_id] = SelectRoleView(self)
-                    self.views[message_id].add_item(select)
+                for message_id in set(select_data.get("messages", [])):
+                    if message_id not in self.views[guild_id]:
+                        log.trace("Creating view for select %s", select_name)
+                        self.views[guild_id][message_id] = RoleToolsView(self)
+                    self.views[guild_id][message_id].add_item(select)
+                    # log.debug("Adding select to %s on message %s", select.name, message_id)
 
     @roletools.group(name="select", aliases=["selects"], with_app_command=False)
     @commands.admin_or_permissions(manage_roles=True)
@@ -394,7 +401,8 @@ class RoleToolsSelect(RoleToolsMixin):
         chosen yet.
         """
         await ctx.typing()
-
+        if ctx.guild.id not in self.views:
+            self.views[ctx.guild.id] = {}
         if " " in name:
             msg = _("There cannot be a space in the name of a select menu.")
             await ctx.send(msg)
@@ -449,14 +457,16 @@ class RoleToolsSelect(RoleToolsMixin):
             placeholder=placeholder,
         )
         select_menus.update_options(ctx.guild)
-        view = SelectRoleView(self)
+        view = RoleToolsView(self)
         view.add_item(select_menus)
 
         msg_str = _("Here is how your select menu will look.")
         msg = await ctx.send(msg_str, view=view)
         async with self.config.guild(ctx.guild).select_menus() as select_menus:
-            select_menus[name.lower()]["messages"].append(f"{msg.channel.id}-{msg.id}")
-        self.views[f"{msg.channel.id}-{msg.id}"] = view
+            x = set(select_menus[name.lower()]["messages"])
+            x.add(f"{msg.channel.id}-{msg.id}")
+            select_menus[name.lower()]["messages"] = list(x)
+        self.views[ctx.guild.id][f"{msg.channel.id}-{msg.id}"] = view
 
     @select.command(name="delete", aliases=["del", "remove"])
     async def delete_select_menu(self, ctx: Context, *, name: str) -> None:
@@ -465,9 +475,11 @@ class RoleToolsSelect(RoleToolsMixin):
 
         `<name>` - the name of the select menu you want to delete.
         """
+        if ctx.guild.id not in self.views:
+            self.views[ctx.guild.id] = {}
         async with self.config.guild(ctx.guild).select_menus() as select_menus:
             if name.lower() in select_menus:
-                for view in self.views.values():
+                for view in self.views[ctx.guild.id].values():
                     children_names = [i.name for i in view.children]
                     if all(
                         i in children_names for i in select_menus[name.lower()].get("options", [])
@@ -566,7 +578,7 @@ class RoleToolsSelect(RoleToolsMixin):
             max_values=1,
             options=[option],
         )
-        view = SelectRoleView(self)
+        view = RoleToolsView(self)
         view.add_item(select_menus)
         msg = _("Here is how your select option will look.")
         await ctx.send(msg, view=view)
@@ -578,11 +590,13 @@ class RoleToolsSelect(RoleToolsMixin):
 
         `<name>` - the name of the select option you want to delete.
         """
+        if ctx.guild.id not in self.views:
+            self.views[ctx.guild.id] = {}
         async with self.config.guild(ctx.guild).select_options() as select_options:
             if name in select_options:
                 role_id = select_options[name]["role_id"]
                 custom_id = f"RTSelect-{name.lower()}-{role_id}"
-                for view in self.views.values():
+                for view in self.views[ctx.guild.id].values():
                     for child in view.children:
                         if not isinstance(child, SelectRole):
                             continue
@@ -631,7 +645,7 @@ class RoleToolsSelect(RoleToolsMixin):
                 min_values=min_values,
                 max_values=max_values,
             )
-            for messages in select_data["messages"]:
+            for messages in set(select_data["messages"]):
                 channel_id, msg_id = messages.split("-")
 
                 channel = ctx.guild.get_channel(int(channel_id))

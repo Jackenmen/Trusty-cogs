@@ -7,7 +7,7 @@ import string
 from copy import copy
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Any, Dict, List, Literal, Optional, Pattern, Tuple, cast
+from typing import Any, Dict, List, Literal, Optional, Pattern, Tuple, Union, cast
 
 import aiohttp
 import discord
@@ -276,6 +276,86 @@ class TriggerHandler(ReTriggerMixin):
             return
         await self.check_triggers(message, True)
 
+    @commands.Cog.listener()
+    async def on_thread_create(self, thread: discord.Thread):
+        if await self.bot.cog_disabled_in_guild(self, thread.guild):
+            return
+        if not thread.permissions_for(thread.guild.me).manage_threads:
+            return
+        try:
+            await self.check_triggers_thread(thread)
+        except Exception:
+            log.exception("Error checking thread title")
+
+    @commands.Cog.listener()
+    async def on_thread_update(self, before: discord.Thread, after: discord.Thread):
+        if await self.bot.cog_disabled_in_guild(self, before.guild):
+            return
+        if not before.permissions_for(before.guild.me).manage_threads:
+            return
+        if before.name != after.name:
+            try:
+                await self.check_triggers_thread(after, edit=True)
+            except Exception:
+                log.exception("Error checking thread title change")
+
+    async def check_triggers_thread(self, thread: discord.Thread, *, edit: bool = False):
+        guild = thread.guild
+        for trigger in self.triggers[guild.id].values():
+            if not trigger.enabled:
+                continue
+            if TriggerResponse.delete not in trigger.response_type:
+                continue
+            if not trigger.read_thread_title:
+                continue
+            if edit and not trigger.check_edits:
+                continue
+            allowed_trigger = await trigger.check_bw_list(author=thread.owner, channel=thread)
+            is_auto_mod = any(r.is_automod for r in trigger.response_type)
+            is_mod = False
+            if thread.owner is not None:
+                is_mod = await self.is_mod_or_admin(thread.owner)
+            if not allowed_trigger:
+                log.debug(
+                    "ReTrigger: %r is immune from allowlist/blocklist %r", thread.owner, trigger
+                )
+                continue
+            if allowed_trigger and (is_auto_mod and is_mod):
+                log.debug(
+                    "ReTrigger: %r is immune from automated actions %r", thread.owner, trigger
+                )
+                continue
+
+            search = await self.safe_regex_search(guild, trigger, thread.name)
+            if not search[0]:
+                trigger.enabled = False
+                return
+            elif search[0] and search[1] != []:
+                trigger.count += 1
+                log.debug(
+                    "ReTrigger: thread from %r triggered for deletion with %r",
+                    thread.owner,
+                    trigger,
+                )
+                try:
+                    log.debug("Deleting thread %r", thread)
+                    await thread.delete()
+                    if await self.config.guild(guild).filter_logs():
+                        await self.modlog_action(thread, trigger, search[1], _("Deleted Thread"))
+                except discord.errors.NotFound:
+                    log.debug(
+                        "Retrigger encountered an error in %r with trigger %r", guild, trigger
+                    )
+                except discord.errors.Forbidden:
+                    log.debug(
+                        "Retrigger encountered an error in %r with trigger %r", guild, trigger
+                    )
+                except Exception:
+                    log.exception(
+                        "Retrigger encountered an error in %r with trigger %r", guild, trigger
+                    )
+                return
+
     async def check_triggers(self, message: discord.Message, edit: bool) -> None:
         """
         This is where we iterate through the triggers and perform the
@@ -290,12 +370,10 @@ class TriggerHandler(ReTriggerMixin):
         author: Optional[discord.Member] = guild.get_member(message.author.id)
         if not author:
             return
-
         blocked = not await self.bot.allowed_by_whitelist_blacklist(author)
         channel_perms = channel.permissions_for(author)
         is_command = await self.check_is_command(message)
         is_mod = await self.is_mod_or_admin(author)
-
         for trigger in self.triggers[guild.id].values():
             if not trigger.enabled:
                 continue
@@ -307,14 +385,19 @@ class TriggerHandler(ReTriggerMixin):
             if trigger.nsfw and not channel.is_nsfw():
                 continue
 
-            allowed_trigger = await trigger.check_bw_list(message)
+            allowed_trigger = await trigger.check_bw_list(author=author, channel=channel)
             is_auto_mod = any(r.is_automod for r in trigger.response_type)
             if not allowed_trigger:
+                log.debug("ReTrigger: %r is immune from allowlist/blocklist %r", author, trigger)
                 continue
             if allowed_trigger and (is_auto_mod and is_mod):
+                log.debug("ReTrigger: %r is immune from automated actions %r", author, trigger)
                 continue
             # log.debug(f"Checking trigger {trigger.name}")
             if is_command and not trigger.ignore_commands:
+                log.debug(
+                    "ReTrigger: %r is ignored because they used a command %r", author, trigger
+                )
                 continue
 
             if any(r.is_automod for r in trigger.response_type):
@@ -361,9 +444,10 @@ class TriggerHandler(ReTriggerMixin):
                     )
                     continue
 
-            content = message.content
+            content = ""
+            content += message.content
             if trigger.read_filenames and message.attachments:
-                content = message.content + " " + " ".join(f.filename for f in message.attachments)
+                content += " " + " ".join(f.filename for f in message.attachments)
 
             if trigger.ocr_search and ALLOW_OCR:
                 content += await self.get_image_text(message)
@@ -379,6 +463,7 @@ class TriggerHandler(ReTriggerMixin):
                 )
                 trigger.disable()
                 continue
+            # log.debug("content = %s message.content = %s", content, message.content)
             search = await self.safe_regex_search(guild, trigger, content)
             if not search[0]:
                 trigger.enabled = False
@@ -528,6 +613,7 @@ class TriggerHandler(ReTriggerMixin):
         author: discord.Member = cast(discord.Member, message.author)
         reason = _("Trigger response: {trigger}").format(trigger=trigger.name)
         own_permissions = channel.permissions_for(guild.me)
+        is_thread_message = getattr(message, "is_thread", False)
         if not isinstance(channel, discord.Thread):
             if (
                 trigger.thread.public is not None
@@ -980,12 +1066,26 @@ class TriggerHandler(ReTriggerMixin):
         return str(getattr(first, second, raw_result))
 
     async def modlog_action(
-        self, message: discord.Message, trigger: Trigger, find: List[str], action: str
+        self,
+        message_or_thread: Union[discord.Message, discord.Thread],
+        trigger: Trigger,
+        find: List[str],
+        action: str,
     ) -> None:
-        modlogs = await self.config.guild(message.guild).modlog()
-        guild: discord.Guild = cast(discord.Guild, message.guild)
-        author: discord.Member = cast(discord.Member, message.author)
-        channel: discord.TextChannel = cast(discord.TextChannel, message.channel)
+        guild: discord.Guild = cast(discord.Guild, message_or_thread.guild)
+        if isinstance(message_or_thread, discord.Message):
+            author = message_or_thread.author
+            content = message_or_thread.content
+            attachments = message_or_thread.attachments
+            channel: discord.TextChannel = cast(discord.TextChannel, message_or_thread.channel)
+        else:
+            author = message_or_thread.owner
+            content = message_or_thread.name
+            attachments = []
+            channel: discord.TextChannel = cast(discord.TextChannel, message_or_thread.parent)
+
+        modlogs = await self.config.guild(guild).modlog()
+        # author: discord.Member = cast(discord.Member, author)
         if modlogs:
             if modlogs == "default":
                 # We'll get the default modlog channel setup
@@ -1002,7 +1102,7 @@ class TriggerHandler(ReTriggerMixin):
                     return
             infomessage = f"{author} - {action}\n"
             embed = discord.Embed(
-                description=message.content,
+                description=content,
                 colour=discord.Colour.dark_red(),
                 timestamp=datetime.now(tz=timezone.utc),
             )
@@ -1012,11 +1112,11 @@ class TriggerHandler(ReTriggerMixin):
             if found_regex:
                 embed.add_field(name=_("Found Triggers"), value=found_regex[:1024])
             embed.add_field(name=_("Trigger author"), value=f"<@{trigger.author}>")
-            if message.attachments:
-                files = ", ".join(a.filename for a in message.attachments)
+            if attachments:
+                files = ", ".join(a.filename for a in attachments)
                 embed.add_field(name=_("Attachments"), value=files)
-            embed.set_footer(text=_("User ID: ") + str(message.author.id))
-            embed.set_author(name=infomessage, icon_url=author.avatar.url)
+            embed.set_footer(text=_("User ID: ") + str(author.id))
+            embed.set_author(name=infomessage, icon_url=author.display_avatar)
             try:
                 if modlog_channel.permissions_for(guild.me).embed_links:
                     await modlog_channel.send(embed=embed)
