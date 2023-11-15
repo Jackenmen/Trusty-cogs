@@ -133,7 +133,7 @@ class Pickems(discord.ui.View):
         self.link = link
         self._should_save: bool = True
         # Start true so we save instantiated pickems
-        self.game_type: str = game_type
+        self.game_type: GameType = game_type
         super().__init__(timeout=None)
         disabled_buttons = datetime.now(tz=timezone.utc) > self.game_start
         self.home_button = PickemsButton(
@@ -241,9 +241,13 @@ class Pickems(discord.ui.View):
         log.trace("Pickems from_json data: %s", data)
         game_start = datetime.strptime(data["game_start"], "%Y-%m-%dT%H:%M:%SZ")
         game_start = game_start.replace(tzinfo=timezone.utc)
+        try:
+            game_state = GameState(data["game_state"])
+        except ValueError:
+            game_state = GameState.from_statsapi(data["game_state"])
         return cls(
             game_id=data["game_id"],
-            game_state=GameState(data["game_state"]),
+            game_state=game_state,
             messages=data.get("messages", []),
             guild=data["guild"],
             game_start=game_start,

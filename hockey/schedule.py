@@ -371,16 +371,19 @@ class ScheduleList(menus.PageSource):
                         f"{game_state} -  {away_emoji} {away_abr} **{away_score}** - "
                         f"**{home_score}** {home_emoji} {home_abr} \n{broadcast_str}\n"
                     )
-                    # game_recap = await Game.get_game_recap(game["gamePk"], session=self._session)
-                    # msg += (
-                    #     f"[{game_state} -  {away_emoji} {away_abr} **{away_score}** - "
-                    #     f"**{home_score}** {home_emoji} {home_abr}]({game_recap}) \n{broadcast_str}\n"
-                    # )
+
                 else:
-                    msg += (
-                        f"{game_state} -  {away_emoji} {away_abr} **{away_score}** - "
-                        f"**{home_score}** {home_emoji} {home_abr} \n{broadcast_str}\n"
-                    )
+                    game_recap = await self.api.get_game_recap(game.id)
+                    if game_recap is not None:
+                        msg += (
+                            f"[{game_state} -  {away_emoji} {away_abr} **{away_score}** - "
+                            f"**{home_score}** {home_emoji} {home_abr}]({game_recap}) \n{broadcast_str}\n"
+                        )
+                    else:
+                        msg += (
+                            f"{game_state} -  {away_emoji} {away_abr} **{away_score}** - "
+                            f"**{home_score}** {home_emoji} {home_abr} \n{broadcast_str}\n"
+                        )
             else:
                 time_str = f"<t:{int(game_start.timestamp())}:t>"
                 msg += (
@@ -511,15 +514,18 @@ class ScheduleList(menus.PageSource):
         if self.team:
             team = self.team[0]
         data = await self.api.get_schedule(team, date, end_date)
-        days = data.days
-        if not days:
-            #      log.debug("No schedule, looking for more days")
-            if self._checks < self.limit:
-                self._checks += 1
-                games = await self._next_batch(date=self.date, _next=_next, _prev=_prev)
-            else:
-                raise NoSchedule
-        games = days[0]
+        if team is None:
+            days = data.days
+            if not days:
+                #      log.debug("No schedule, looking for more days")
+                if self._checks < self.limit:
+                    self._checks += 1
+                    games = await self._next_batch(date=self.date, _next=_next, _prev=_prev)
+                else:
+                    raise NoSchedule
+            games = days[0]
+        else:
+            games = data.games
         if not games:
             #      log.debug("No schedule, looking for more days")
             if self._checks < self.limit:

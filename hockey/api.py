@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, TypedDict
 
 import aiohttp
@@ -20,7 +22,9 @@ log = getLogger("red.trusty-cogs.Hockey")
 
 _ = Translator("Hockey", __file__)
 
-
+VIDEO_URL = (
+    "https://players.brightcove.net/6415718365001/EXtG1xJ7H_default/index.html?videoId={clip_id}"
+)
 ORDINALS = {
     1: _("1st"),
     2: _("2nd"),
@@ -228,7 +232,23 @@ class Event:
 
         return description
 
-    def to_goal(self, data: dict) -> Goal:
+    def get_highlight(self, content: Optional[dict]) -> Optional[str]:
+        if content is None:
+            return None
+        clip_id = None
+        scoring = content.get("summary", {}).get("scoring", [])
+        for period in scoring:
+            if period.get("period", 0) != self.period:
+                log.debug("ignoring period because it doesn't match.")
+                continue
+            for goal in period.get("goals", []):
+                if goal.get("timeInPeriod", "") == self.time_in_period:
+                    clip_id = goal.get("highlightClip", None)
+        if clip_id is not None:
+            return VIDEO_URL.format(clip_id=clip_id)
+        return None
+
+    def to_goal(self, data: dict, content: Optional[dict] = None) -> Goal:
         scorer_id = self.details.get("scoringPlayerId", 0)
         jersey_no = self.get_player(scorer_id, data).get("sweaterNumber", 0)
 
@@ -254,7 +274,7 @@ class Event:
             strength_code=self.situation.code,
             empty_net=self.situation.empty_net(home),
             event="",
-            link="",
+            link=self.get_highlight(content),
         )
 
 
@@ -320,6 +340,10 @@ class Schedule:
     @classmethod
     def from_nhle(cls, data: dict) -> Schedule:
         days = []
+        if "games" in data:
+            for g in data.get("games", []):
+                days.append([ScheduledGame.from_nhle(g)])
+
         for day in data.get("gameWeek", []):
             games = []
             for game in day.get("games", []):
@@ -329,11 +353,12 @@ class Schedule:
 
 
 class HockeyAPI:
-    def __init__(self):
+    def __init__(self, testing: bool = False):
         self.session = aiohttp.ClientSession(
             headers={"User-Agent": "Red-DiscordBot Trusty-cogs Hockey"}
         )
         self.base_url = None
+        self.testing = testing
 
     async def close(self):
         await self.session.close()
@@ -346,7 +371,7 @@ class HockeyAPI:
         team: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-    ) -> dict:
+    ) -> Schedule:
         raise NotImplementedError
 
     async def get_games_list(
@@ -354,7 +379,7 @@ class HockeyAPI:
         team: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-    ) -> List[dict]:
+    ) -> List[Game]:
         raise NotImplementedError
 
     async def get_games(
@@ -362,19 +387,19 @@ class HockeyAPI:
         team: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-    ) -> List[dict]:
+    ) -> List[Game]:
         raise NotImplementedError
 
-    async def get_game_from_id(self, game_id: int) -> dict:
+    async def get_game_from_id(self, game_id: int) -> Game:
         raise NotImplementedError
 
-    async def get_game_from_url(self, game_url: str) -> dict:
+    async def get_game_from_url(self, game_url: str) -> Game:
         raise NotImplementedError
 
 
 class StatsAPI(HockeyAPI):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, testing: bool = False):
+        super().__init__(testing)
         self.base_url = "https://statsapi.web.nhl.com"
 
     async def get_game_content(self, game_id: int):
@@ -466,7 +491,7 @@ class StatsAPI(HockeyAPI):
                     continue
         return return_games_list
 
-    async def get_game_from_id(self, game_id: int) -> dict:
+    async def get_game_from_id(self, game_id: int) -> Game:
         url = f"{self.base_url}/api/v1/game/{game_id}/feed/live"
         async with self.session.get(url) as resp:
             data = await resp.json()
@@ -665,8 +690,8 @@ class StatsAPI(HockeyAPI):
 
 
 class NewAPI(HockeyAPI):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, testing: bool = False):
+        super().__init__(testing)
         self.base_url = "https://api-web.nhle.com/v1"
 
     async def get_game_content(self, game_id: int):
@@ -682,6 +707,9 @@ class NewAPI(HockeyAPI):
         return TEAMS.get(team_name, {}).get("tri_code", None)
 
     async def schedule_now(self) -> Schedule:
+        if self.testing:
+            data = await self.load_testing_data("testschedule.json")
+            return Schedule.from_nhle(data)
         async with self.session.get(f"{self.base_url}/schedule/now") as resp:
             if resp.status != 200:
                 log.error("Error accessing the Schedule for now. %s", resp.status)
@@ -718,14 +746,15 @@ class NewAPI(HockeyAPI):
         team_abr = self.team_to_abbrev(team)
         date_str = "now"
         if date is not None:
-            date_str = date.strftime("%Y-%M-%d")
+            date_str = date.strftime("%Y-%m-%d")
         if team_abr is None:
             raise HockeyAPIError("An unknown team name was provided")
-        async with self.session.get(
-            f"{self.base_url}/club-schedule/{team_abr}/week/{date_str}"
-        ) as resp:
+        url = f"{self.base_url}/club-schedule/{team_abr}/week/{date_str}"
+        async with self.session.get(url) as resp:
             if resp.status != 200:
-                log.error("Error accessing the Club Schedule for the week. %s", resp.status)
+                log.error(
+                    "Error accessing the Club Schedule for the week. %s: %s", resp.status, url
+                )
                 raise HockeyAPIError("There was an error accessing the API.")
 
             data = await resp.json()
@@ -739,7 +768,7 @@ class NewAPI(HockeyAPI):
 
         date_str = "now"
         if date is not None:
-            date_str = date.strftime("%Y-%M")
+            date_str = date.strftime("%Y-%m")
         async with self.session.get(
             f"{self.base_url}/club-schedule/{team_abr}/month/{date_str}"
         ) as resp:
@@ -823,14 +852,27 @@ class NewAPI(HockeyAPI):
             return [await self.get_game_from_id(g.id) for g in schedule.days[0]]
         return []
 
+    async def load_testing_data(self, file_name: str) -> dict:
+        path = Path(__file__).parent.resolve() / file_name
+        with path.open("r") as infile:
+            data = json.loads(infile.read())
+        return data
+
     async def get_game_from_id(self, game_id: int) -> Game:
+        if self.testing:
+            data = await self.load_testing_data("testgame.json")
+            return await self.to_game(data)
         data = await self.gamecenter_pbp(game_id)
-        return await self.to_game(data)
+        try:
+            landing = await self.gamecenter_landing(game_id)
+        except Exception:
+            landing = None
+        return await self.to_game(data, content=landing)
 
     async def get_game_from_url(self, game_url: str) -> dict:
         raise NotImplementedError
 
-    async def to_goal(self, data: dict, players: dict, media_content: Optional[dict]) -> Goal:
+    async def to_goal(self, data: dict, players: dict, content: Optional[dict]) -> Goal:
         # scorer = scorer_id[0]
         return Goal(
             goal_id=data["result"]["eventCode"],
@@ -854,10 +896,18 @@ class NewAPI(HockeyAPI):
             away_shots=data.get("away_shots", 0),
         )
 
+    async def get_game_recap(self, game_id: int) -> Optional[str]:
+        landing = await self.gamecenter_landing(game_id)
+        recap_id = landing.get("summary", {}).get("gameVideo", {}).get("condensedGame", None)
+        if recap_id is not None:
+            return VIDEO_URL.format(clip_id=recap_id)
+        return None
+
     async def to_game(self, data: dict, content: Optional[dict] = None) -> Game:
         game_id = data["id"]
         period = data.get("period", -1)
-        game_state = GameState.from_nhle(data["gameState"], period)
+        period_time_left = data.get("clock", {}).get("timeRemaining")
+        game_state = GameState.from_nhle(data["gameState"], period, period_time_left)
         home_id = data.get("homeTeam", {}).get("id", -1)
         home_team = TEAM_IDS.get(home_id, "Unknown Team")
         away_id = data.get("awayTeam", {}).get("id", -1)
@@ -866,14 +916,32 @@ class NewAPI(HockeyAPI):
 
         period_ord = ORDINALS.get(period, "")
         events = [Event.from_json(i) for i in data["plays"]]
-        goals = [e.to_goal(data) for e in events if e.type_code is GameEventTypeCode.GOAL]
+        goals = [
+            e.to_goal(data, content=content)
+            for e in events
+            if e.type_code is GameEventTypeCode.GOAL
+        ]
         home_roster = [p for p in data["rosterSpots"] if p["teamId"] == home_id]
         away_roster = [p for p in data["rosterSpots"] if p["teamId"] == away_id]
         game_type = GameType.from_int(data["gameType"])
         first_star = None
         second_star = None
         third_star = None
-        period_time_left = data.get("clock", {}).get("timeRemaining")
+
+        recap_url = None
+        if content:
+            recap = content.get("summary", {}).get("gameVideo", {}).get("condensedGame")
+            if recap is not None:
+                recap_url = VIDEO_URL.format(clip_id=recap)
+            for star in content.get("summary", {}).get("threeStars", []):
+                first_name = star.get("firstName", "")
+                last_name = star.get("lastName", "")
+                if star.get("star", 0) == 1:
+                    first_star = f"{first_name} {last_name}"
+                if star.get("star", 0) == 2:
+                    second_star = f"{first_name} {last_name}"
+                if star.get("star", 0) == 3:
+                    third_star = f"{first_name} {last_name}"
         return Game(
             game_id=game_id,
             game_state=game_state,
@@ -900,7 +968,7 @@ class NewAPI(HockeyAPI):
             link="",
             game_type=game_type,
             season=data.get("season", 0),
-            recap_url=None,
+            recap_url=recap_url,
             api=self,
             # data=data,
         )
