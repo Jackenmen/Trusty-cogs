@@ -800,9 +800,15 @@ class EventMixin:
         # set guild level i18n
         time = datetime.datetime.now(datetime.timezone.utc)
         entry = await self.get_audit_log_entry(guild, member, discord.AuditLogAction.kick)
-        if entry is not None:
-            perp = entry.user
-            reason = entry.reason
+        joined = member.joined_at
+        member_time = None
+        if joined is not None:
+            m_date = discord.utils.format_dt(joined, "D")
+            m_rel = discord.utils.format_dt(joined, "R")
+            member_time = f"{m_date} ({m_rel})"
+
+        perp = getattr(entry, "user", None)
+        reason = getattr(entry, "reason", None)
         if embed_links:
             embed = discord.Embed(
                 description=member,
@@ -812,6 +818,8 @@ class EventMixin:
             embed.add_field(name=_("Member"), value=member.mention)
             embed.add_field(name=_("Member ID"), value=box(str(member.id)))
             embed.add_field(name=_("Total Users:"), value=str(len(guild.members)))
+            if member_time is not None:
+                embed.add_field(name=_("Member since:"), value=member_time)
 
             if perp:
                 embed.add_field(name=_("Kicked"), value=perp.mention)
@@ -2333,9 +2341,8 @@ class EventMixin:
             entry = await self.get_audit_log_entry(
                 guild, before, discord.AuditLogAction.channel_update
             )
-            if entry is not None:
-                perp = entry.user
-                reason = entry.reason
+        perp = getattr(entry, "user", None)
+        reason = getattr(entry, "reason", None)
 
         if perp:
             msg += _("Updated by ") + str(perp) + "\n"
