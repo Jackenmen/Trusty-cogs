@@ -10,6 +10,8 @@ from redbot.core.commands import Context
 from redbot.core.i18n import Translator, cog_i18n
 from redbot.core.utils import AsyncIter, bounded_gather
 from redbot.core.utils.chat_formatting import humanize_list
+from redbot.core.utils.menus import start_adding_reactions
+from redbot.core.utils.predicates import ReactionPredicate
 
 from .abc import RoleToolsMixin
 from .buttons import RoleToolsButtons
@@ -129,6 +131,7 @@ class RoleTools(
         self._repo = ""
         self._commit = ""
         self.temporary_roles_task.start()
+        self.is_discord: bool = discord.utils.oauth_url("").startswith("https://discord.com/")
 
     def cog_check(self, ctx: commands.Context) -> bool:
         return self._ready.is_set()
@@ -246,28 +249,37 @@ class RoleTools(
         if not_assignable:
             role_list = "\n".join(f"- {role.mention}" for role in not_assignable)
             msg_str = _(
-                "The following roles are not self assignable:\n{roles}\n"
-                "Would you liked to make them self assignable and self removeable?"
+                "The following roles are not self-assignable:\n{roles}\n"
+                "Would you liked to make them self-assignable and self-removable?"
             ).format(
                 roles=role_list,
             )
-            pred = ConfirmView(ctx.author)
-            pred.message = await ctx.send(
-                msg_str, view=pred, allowed_mentions=discord.AllowedMentions(roles=False)
-            )
-            await pred.wait()
+            if self.is_discord:
+                pred = ConfirmView(ctx.author)
+                pred.message = await ctx.send(
+                    msg_str, view=pred, allowed_mentions=discord.AllowedMentions(roles=False)
+                )
+                await pred.wait()
+            else:
+                msg = await ctx.send(
+                    msg_str, allowed_mentions=discord.AllowedMentions(roles=False)
+                )
+                start_adding_reactions(msg, ReactionPredicate.YES_OR_NO_EMOJIS)
+                pred = ReactionPredicate.yes_or_no(msg, ctx.author)
+                await ctx.bot.wait_for("reaction_add", check=pred)
+
             if pred.result:
                 for role in not_assignable:
                     await self.config.role(role).selfassignable.set(True)
                     await self.config.role(role).selfremovable.set(True)
                 await ctx.channel.send(
                     _(
-                        "The following roles have been made self assignable and self removeable:\n{roles}"
+                        "The following roles have been made self-assignable and self-removeable:\n{roles}"
                     ).format(roles=role_list)
                 )
             else:
                 await ctx.channel.send(
-                    _("Okay I won't make the following rolesself assignable:\n{roles}").format(
+                    _("Okay I won't make the following roles self-assignable:\n{roles}").format(
                         roles=role_list
                     )
                 )
@@ -320,7 +332,7 @@ class RoleTools(
         author: discord.Member = ctx.author
 
         if not await self.config.role(role).selfremovable():
-            msg = _("The {role} role is not currently self removable.").format(role=role.mention)
+            msg = _("The {role} role is not currently self-removable.").format(role=role.mention)
             await ctx.send(msg)
             return
         await self.remove_roles(author, [role], _("Selfrole command."))
