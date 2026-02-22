@@ -280,8 +280,10 @@ class StarboardMessage:
         if self.new_message is None:
             return
         try:
-            message_edit = star_channel.get_partial_message(self.new_message)
-            await message_edit.edit(content=content)
+            message_edit = discord.utils.get(star_channel._state._messages, id=self.new_message)
+            if message_edit is None:
+                message_edit = await star_channel.fetch_message(self.new_message)
+            await message_edit.edit(content=content, embeds=message_edit.embeds)
         except (discord.errors.NotFound, discord.errors.Forbidden):
             return
 
