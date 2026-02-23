@@ -61,7 +61,7 @@ class StarboardEvents:
                     if ref_msg is not None:
                         try:
                             ref_text = ref_msg.system_content
-                            ref_link = f"\n\n{ref_msg.jump_url}"
+                            ref_link = f"\n\n[x]({ref_msg.jump_url})"
                             if len(ref_text + ref_link) > 1024:
                                 ref_text = (
                                     ref_text[: len(ref_link) - 1] + "\N{HORIZONTAL ELLIPSIS}"
@@ -76,7 +76,7 @@ class StarboardEvents:
                         except Exception:
                             pass
                 em.timestamp = message.created_at
-                jump_link = f"\n\n{message.jump_url}"
+                jump_link = f"\n\n[x]({message.jump_url})"
                 if em.description:
                     with_context = f"{em.description}{jump_link}"
                     if len(with_context) > 4096:
@@ -103,7 +103,7 @@ class StarboardEvents:
                 if ref_msg is not None:
                     try:
                         ref_text = ref_msg.system_content
-                        ref_link = f"\n\n{ref_msg.jump_url}"
+                        ref_link = f"\n\n[x]({ref_msg.jump_url})"
                         if len(ref_text + ref_link) > 1024:
                             ref_text = ref_text[: len(ref_link) - 1] + "\N{HORIZONTAL ELLIPSIS}"
                         ref_text += ref_link
@@ -116,7 +116,7 @@ class StarboardEvents:
                     except Exception:
                         pass
             em.timestamp = message.created_at
-            jump_link = f"\n\n{message.jump_url}"
+            jump_link = f"\n\n[x]({message.jump_url})"
             if em.description:
                 with_context = f"{em.description}{jump_link}"
                 if len(with_context) > 2048:
