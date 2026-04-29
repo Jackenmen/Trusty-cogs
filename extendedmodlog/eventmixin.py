@@ -33,6 +33,7 @@ class MemberUpdateEnum(Enum):
     timeout = "timed_out_until"
     avatar = "guild_avatar"
     flags = "flags"
+    premium_since = "premium_since"
 
     @staticmethod
     def names():
@@ -43,6 +44,7 @@ class MemberUpdateEnum(Enum):
             MemberUpdateEnum.timeout: _("Timeout until"),
             MemberUpdateEnum.avatar: _("Guild Avatar"),
             MemberUpdateEnum.flags: _("Flags"),
+            MemberUpdateEnum.premium_since: _("Premium Since"),
         }
 
     def get_name(self) -> str:
@@ -2183,7 +2185,20 @@ class EventMixin:
                         embed.description += _("- {author} removed their guild avatar.\n").format(
                             author=after.mention, after_attr=after_attr
                         )
-
+                elif attr == "premium_since":
+                    worth_sending = True
+                    if after_attr:
+                        since = discord.utils.format_dt(after_attr, "F")
+                        relative = discord.utils.format_dt(after_attr, "R")
+                        embed.description += _(
+                            "- {author} has subscribed to the guild since {since} ({relative})."
+                        ).format(author=after.mention, since=since)
+                    elif before_attr:
+                        since = discord.utils.format_dt(before_attr, "F")
+                        relative = discord.utils.format_dt(before_attr, "R")
+                        embed.description += _(
+                            "- {author} has unsubscribed from the guild. They started {since} ({relative})."
+                        ).format(author=after.mention, since=since, relative=relative)
                 else:
                     entry = await self.get_audit_log_entry(
                         guild, before, discord.AuditLogAction.member_update
