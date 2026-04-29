@@ -142,6 +142,8 @@ class Playoffs:
     bracketLogo: Optional[str] = None
     bracketLogoFr: Optional[str] = None
     series: List[PlayoffSeries] = field(default_factory=list)
+    bracketTitle: Optional[str] = None
+    bracketSubTitle: Optional[str] = None
 
     @property
     def logo(self) -> Optional[URL]:
@@ -151,7 +153,12 @@ class Playoffs:
     @classmethod
     def from_json(cls, data: dict, year: int, api: NewAPI) -> Playoffs:
         series = [PlayoffSeries.from_json(i, year, api) for i in data.pop("series", [])]
-        return cls(**data, series=series, year=year)
+        return cls(
+            series=series,
+            year=year,
+            bracketLogo=data.pop("bracketLogo", None),
+            bracketLogoFr=data.pop("bracketLogoFr", None),
+        )
 
     def get_series(self, team_1: Team, team_2: Team) -> Optional[PlayoffSeries]:
         for series in self.series:
@@ -297,7 +304,7 @@ class PlayoffSeries:
         return cls(**data, topSeedTeam=top_team, bottomSeedTeam=bot_team, year=year)
 
 
-class PlayoffsView(discord.ui.LayoutView):
+class PlayoffsView(discord.ui.View):
     def __init__(self, start_date: Optional[int], api: NewAPI):
         super().__init__()
         self.playoffs = None
@@ -305,15 +312,15 @@ class PlayoffsView(discord.ui.LayoutView):
         self.forward_button = ForwardButton(discord.ButtonStyle.grey, 0)
         self.back_button = BackButton(discord.ButtonStyle.grey, 0)
         self.stop_button = StopButton(discord.ButtonStyle.red, 0)
-        # self.add_item(self.stop_button)
-        # self.add_item(self.back_button)
-        # self.add_item(self.forward_button)
+        self.add_item(self.stop_button)
+        self.add_item(self.back_button)
+        self.add_item(self.forward_button)
         self.api = api
         self.container = None
-        self.action_row = discord.ui.ActionRow()
-        self.action_row.add_item(self.stop_button)
-        self.action_row.add_item(self.back_button)
-        self.action_row.add_item(self.forward_button)
+        # self.action_row = discord.ui.ActionRow()
+        # self.action_row.add_item(self.stop_button)
+        # self.action_row.add_item(self.back_button)
+        # self.action_row.add_item(self.forward_button)
 
     async def on_timeout(self):
         await self.message.edit(view=None)
@@ -323,7 +330,7 @@ class PlayoffsView(discord.ui.LayoutView):
         self.message = await self.send_initial_message(ctx)
 
     async def _get_kwargs_from_page(self):
-        value = self.playoffs.container()
+        value = self.playoffs.embed()
         if isinstance(value, discord.ui.Container):
             self.container = value
             self.container.add_item(self.action_row)
