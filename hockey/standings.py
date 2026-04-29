@@ -142,6 +142,8 @@ class Playoffs:
     bracketLogo: Optional[str] = None
     bracketLogoFr: Optional[str] = None
     series: List[PlayoffSeries] = field(default_factory=list)
+    bracketTitle: Optional[str] = None
+    bracketSubTitle: Optional[str] = None
 
     @property
     def logo(self) -> Optional[URL]:
@@ -151,7 +153,12 @@ class Playoffs:
     @classmethod
     def from_json(cls, data: dict, year: int, api: NewAPI) -> Playoffs:
         series = [PlayoffSeries.from_json(i, year, api) for i in data.pop("series", [])]
-        return cls(**data, series=series, year=year)
+        return cls(
+            series=series,
+            year=year,
+            bracketLogo=data.pop("bracketLogo", None),
+            bracketLogoFr=data.pop("bracketLogoFr", None),
+        )
 
     def get_series(self, team_1: Team, team_2: Team) -> Optional[PlayoffSeries]:
         for series in self.series:

@@ -120,7 +120,12 @@ class Schedule(menus.PageSource):
                 ret["files"].append(t.file)
 
         banner_img = await menu.cog.make_banner(game_obj.home, game_obj.away)
-        if banner_img is not None:
+        if (
+            banner_img is not None
+            and not self.include_heatmap
+            and not self.include_gameflow
+            and "attachment://" in em.image.url
+        ):
             banner = discord.File(banner_img, filename="banner.webp" if WEBP else "banner.png")
             if "files" in ret:
                 ret["files"].append(banner)
